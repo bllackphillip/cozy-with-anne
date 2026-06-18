@@ -2,6 +2,28 @@ import { stripe } from "@/lib/stripe";
 import { getArtworksByIds } from "@/lib/db";
 import { NextResponse } from "next/server";
 
+/*
+  Server-authoritative price for a cart line, read from the artwork document.
+  The client sends a price, but we never trust it — a tampered POST could claim
+  any amount (e.g. €1 for a €120 original). We recompute from Firestore and
+  charge that. Returns null when the line can't be priced (unknown id, unknown
+  print size, or a type/shape mismatch) so the caller can reject it.
+
+  Shapes: original → original.price · print → prints.sizes[] matched by size
+  label (finish does not change price) · sticker → stickers.size.price (a single
+  size; background does not change price).
+*/
+function resolvePrice(artwork, item) {
+  if (!artwork) return null;
+  if (item.type === "original") return artwork.original?.price ?? null;
+  if (item.type === "print") {
+    const size = artwork.prints?.sizes?.find((s) => s.label === item.size);
+    return size?.price ?? null;
+  }
+  if (item.type === "sticker") return artwork.stickers?.size?.price ?? null;
+  return null;
+}
+
 export async function POST(req) {
   try {
     const { items } = await req.json();
@@ -11,52 +33,86 @@ export async function POST(req) {
     }
 
     /*
-      INTEGRITY GUARD — originals are 1-of-1. A cart can outlive a sale: a piece
-      can be added in another tab/session (or a stale client) and sell before the
-      buyer checks out. Without a server-side re-check, that stale cart would pay
-      for an already-sold original. So before creating the Checkout Session we
-      re-read every original's live availability from Firestore and refuse if any
-      has sold. (Prints/stickers are unlimited, so they're skipped.) This is the
-      authoritative gate; the cart's "Sold" UI is only a hint and can be stale.
+      Re-read every referenced artwork once. Both price and availability come
+      from this read, never from the client. Because money depends on it, this
+      lookup fails CLOSED: if the catalogue can't be read we refuse checkout
+      rather than guess prices. (The availability-only check used to fail open;
+      pricing raises the stakes.)
     */
-    const originalIds = [
-      ...new Set(
-        items.filter((i) => i.type === "original").map((i) => i.artworkId)
-      ),
-    ];
-    if (originalIds.length) {
-      try {
-        const arts = await getArtworksByIds(originalIds);
-        const byId = Object.fromEntries(arts.map((a) => [a.id, a]));
-        const soldOut = items.filter(
-          (i) =>
-            i.type === "original" &&
-            byId[i.artworkId]?.original?.available === false
-        );
-        if (soldOut.length) {
-          const names = soldOut.map((i) => `"${i.title}"`).join(", ");
-          const plural = soldOut.length > 1;
-          return NextResponse.json(
-            {
-              error: `${names} just sold and ${
-                plural ? "are" : "is"
-              } no longer available. Please remove ${
-                plural ? "them" : "it"
-              } from your cart to continue.`,
-              code: "ITEM_UNAVAILABLE",
-            },
-            { status: 409 }
-          );
-        }
-      } catch (lookupErr) {
-        // Fail open on a transient read error so a Firestore hiccup doesn't block
-        // every checkout. The webhook's idempotent mark-sold remains the backstop
-        // that keeps order/availability data correct.
-        console.warn("Availability check skipped (lookup failed):", lookupErr);
-      }
+    const ids = [...new Set(items.map((i) => i.artworkId).filter(Boolean))];
+    let artworks = [];
+    try {
+      artworks = await getArtworksByIds(ids);
+    } catch (lookupErr) {
+      console.error("Checkout catalogue lookup failed:", lookupErr);
+      return NextResponse.json(
+        { error: "We couldn't start checkout just now. Please try again in a moment." },
+        { status: 503 }
+      );
+    }
+    const byId = Object.fromEntries(artworks.map((a) => [a.id, a]));
+
+    /*
+      OVERSELL GUARD — originals are 1-of-1. Refuse any that has already sold
+      before charging, so a stale cart (a piece added in another tab/session
+      that sold in the meantime) can't double-sell a one-of-a-kind work.
+    */
+    const soldOut = items.filter(
+      (i) =>
+        i.type === "original" &&
+        byId[i.artworkId]?.original?.available === false
+    );
+    if (soldOut.length) {
+      const names = soldOut.map((i) => `"${i.title}"`).join(", ");
+      const plural = soldOut.length > 1;
+      return NextResponse.json(
+        {
+          error: `${names} just sold and ${
+            plural ? "are" : "is"
+          } no longer available. Please remove ${
+            plural ? "them" : "it"
+          } from your cart to continue.`,
+          code: "ITEM_UNAVAILABLE",
+        },
+        { status: 409 }
+      );
     }
 
-    const line_items = items.map((item) => ({
+    /*
+      PRICE GUARD — build each line from server data: server price, server
+      title, and originals forced to quantity 1. The client's `price` is ignored
+      entirely; `variantLabel` is kept only as a cosmetic descriptor.
+    */
+    const priced = [];
+    for (const item of items) {
+      const artwork = byId[item.artworkId];
+      const price = resolvePrice(artwork, item);
+      if (price == null) {
+        return NextResponse.json(
+          {
+            error:
+              "One of your items is no longer available. Please refresh your cart and try again.",
+            code: "ITEM_INVALID",
+          },
+          { status: 409 }
+        );
+      }
+      const quantity =
+        item.type === "original"
+          ? 1
+          : Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1)));
+      priced.push({
+        artworkId: item.artworkId,
+        type: item.type,
+        title: artwork.title,
+        variantLabel: item.variantLabel,
+        price,
+        quantity,
+        image: item.image,
+      });
+    }
+
+    const line_items = priced.map((item) => ({
       price_data: {
         currency: "eur",
         product_data: {
@@ -80,8 +136,9 @@ export async function POST(req) {
         allowed_countries: ["GB", "IE", "FR", "DE", "NL", "BE", "ES", "IT", "PT", "RO", "US", "CA", "AU"],
       },
       metadata: {
+        // Server-priced items, so the webhook records the real amounts.
         items: JSON.stringify(
-          items.map((i) => ({
+          priced.map((i) => ({
             artworkId: i.artworkId,
             type: i.type,
             title: i.title,
