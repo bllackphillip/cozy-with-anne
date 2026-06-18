@@ -6,8 +6,9 @@ import { COUNTRY_CODES, NAME_OVERRIDES } from "@/data/countries";
 /*
   COUNTRY SELECT — a searchable, flag-prefixed country combobox used by the cart
   to choose the shipping destination. Trigger button -> popover with a search box
-  on top and a scrollable list (flag + name). The popover opens UPWARD because the
-  control sits in the cart footer near the bottom of the screen.
+  on top and a scrollable list (flag + name). The popover opens downward so the
+  search box sits directly under the trigger (opening upward pushed the search box
+  off the top of the viewport).
 
   Flags are self-hosted via the `flag-icons` package (CSS class `fi fi-<code>`,
   imported globally in layout.js), so they render reliably offline with no
@@ -136,7 +137,7 @@ export default function CountrySelect({ id, value, onChange }) {
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 bottom-full mb-2 z-20 rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden">
+        <div className="absolute left-0 right-0 top-full mt-2 z-20 rounded-lg border border-gray-200 bg-white shadow-xl overflow-hidden">
           <div className="p-2 border-b border-gray-100">
             <input
               ref={inputRef}
