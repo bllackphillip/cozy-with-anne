@@ -80,10 +80,42 @@ body {
   color: var(--foreground);
 }
 
+/*
+  Homepage header first-paint fallback.
+
+  The preserved root Client Component can be statically prerendered without a
+  pathname, so its server HTML takes the solid non-home branch. layout.js marks
+  the browser's actual initial route before the body paints. These selectors
+  correct only that unresolved first frame; once Header resolves the pathname,
+  data-pathname-ready becomes true and the normal React/sentinel state takes
+  complete control.
+*/
+html[data-initial-page="home"]
+  .site-header[data-pathname-ready="false"]
+  .site-header-bg {
+  opacity: 0;
+  pointer-events: none;
+  border-color: transparent;
+}
+
+html[data-initial-page="home"]
+  .site-header[data-pathname-ready="false"]
+  .site-header-logo {
+  opacity: 0;
+  pointer-events: none;
+}
+
+html[data-initial-page="home"]
+  .site-header[data-pathname-ready="false"]
+  .site-header-home-link {
+  background-color: var(--color-accent);
+  color: var(--color-bg);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
 /* Floral pattern — hero section + header.
    background-attachment: fixed pins the tile to the viewport so the pattern
-   flows seamlessly across the header/hero boundary as the user scrolls.
-   filter is set per-theme via --color-floral-filter to tint the SVG. */
+   flows seamlessly across the header/hero boundary as the user scrolls. */
 .floral-top {
   background-color: var(--color-header);
   background-image: var(--floral-top-image);

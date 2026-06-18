@@ -77,10 +77,31 @@ export default function Header() {
   const [pastHero, setPastHero] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [mobileExpanded, setMobileExpanded] = useState(null);
+  const [browserPathname, setBrowserPathname] = useState(null);
   const headerRef = useRef(null);
   const { cartCount, setIsCartOpen } = useCart();
-  const pathname = usePathname();
+  const nextPathname = usePathname();
+  const pathname = nextPathname || browserPathname;
   const isHome = pathname === "/";
+  const pathnameReady = Boolean(pathname);
+
+  /*
+    On a statically prerendered hard load, Next can render this preserved root
+    Client Component without a pathname. The live Vercel HTML therefore took
+    the non-home branch and stayed solid, while client navigation worked because
+    usePathname() was then populated.
+
+    Resolve the browser path after hydration. The pre-hydration route hint in
+    layout.js and the narrow CSS fallback in globals.css protect first paint;
+    once this state lands, the normal React classes and aria state take over.
+  */
+  useEffect(() => {
+    if (nextPathname) return;
+    const frame = requestAnimationFrame(() => {
+      setBrowserPathname(window.location.pathname);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [nextPathname]);
 
   // Derive close-on-navigate during render — the React-recommended alternative
   // to setState-in-effect. When pathname changes, React re-renders immediately
@@ -107,13 +128,15 @@ export default function Header() {
   useEffect(() => {
     if (!isHome) return;
 
-    const sentinel = document.getElementById("hero-end");
-    if (!sentinel) return;
-
     let frame = 0;
     let cancelled = false;
+    let sentinel = document.getElementById("hero-end");
+    let sentinelObserver = null;
+
     const compute = () => {
       if (cancelled) return;
+      sentinel ??= document.getElementById("hero-end");
+      if (!sentinel) return;
       const height = headerRef.current ? headerRef.current.offsetHeight : 64;
       setPastHero(window.scrollY > 0 && sentinel.getBoundingClientRect().top <= height);
     };
@@ -123,6 +146,22 @@ export default function Header() {
     };
 
     schedule(); // initial — top of page (scrollY 0) resolves to transparent
+    /*
+      On a hard load the preserved header can hydrate before the streamed
+      homepage content has inserted #hero-end. Watch until it appears instead
+      of returning early and permanently missing the scroll setup.
+    */
+    if (!sentinel) {
+      sentinelObserver = new MutationObserver(() => {
+        sentinel = document.getElementById("hero-end");
+        if (!sentinel) return;
+        sentinelObserver.disconnect();
+        sentinelObserver = null;
+        schedule();
+      });
+      sentinelObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
     window.addEventListener("load", schedule);
@@ -135,6 +174,7 @@ export default function Header() {
     return () => {
       cancelled = true;
       cancelAnimationFrame(frame);
+      sentinelObserver?.disconnect();
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("load", schedule);
@@ -170,12 +210,16 @@ export default function Header() {
   const isTransparent = isHome && !pastHero && !mobileMenuOpen;
 
   return (
-    <header ref={headerRef} className="sticky top-0 z-50">
+    <header
+      ref={headerRef}
+      className="site-header sticky top-0 z-50"
+      data-pathname-ready={pathnameReady ? "true" : "false"}
+    >
       {/* Persistent background layer — always in the DOM from first render.
           background-attachment: fixed is set once and never toggled, so the
           GPU compositing layer is pre-created and never causes a jump. */}
       <div
-        className={`absolute inset-0 floral-top ${isTransparent ? "opacity-0 pointer-events-none" : "border-b border-[var(--color-border)]"}`}
+        className={`site-header-bg absolute inset-0 floral-top ${isTransparent ? "opacity-0 pointer-events-none" : "border-b border-[var(--color-border)]"}`}
         aria-hidden="true"
       />
 
@@ -185,7 +229,7 @@ export default function Header() {
           {/* Logo */}
           <Link
             href="/"
-            className={`text-2xl font-bold text-[#FAF6F0] transition-opacity ${isTransparent ? "opacity-0 pointer-events-none select-none" : "opacity-100"}`}
+            className={`site-header-logo text-2xl font-bold text-[#FAF6F0] transition-opacity ${isTransparent ? "opacity-0 pointer-events-none select-none" : "opacity-100"}`}
             style={{
               fontFamily: "var(--font-dancing)",
               textShadow: "0 2px 12px rgba(53,41,41,1), 0 1px 4px rgba(53,41,41,1), 0 0 8px rgba(53,41,41,1)",
@@ -249,7 +293,7 @@ export default function Header() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`text-sm font-medium px-4 py-1.5 ${
+                  className={`${link.href === "/" ? "site-header-home-link " : ""}text-sm font-medium px-4 py-1.5 ${
                     isActive ? "site-btn-active" : "site-btn"
                   }`}
                 >
@@ -377,7 +421,7 @@ export default function Header() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`w-48 block py-2 px-4 text-sm font-medium text-center ${
+                  className={`${link.href === "/" ? "site-header-home-link " : ""}w-48 block py-2 px-4 text-sm font-medium text-center ${
                     isActive ? "site-btn-active" : "site-btn"
                   }`}
                   onClick={() => setMobileMenuOpen(false)}
