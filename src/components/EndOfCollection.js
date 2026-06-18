@@ -14,6 +14,7 @@ import { useState } from "react";
 */
 export default function EndOfCollection() {
   const [email, setEmail] = useState("");
+  const [company, setCompany] = useState(""); // honeypot — stays empty for humans
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -27,7 +28,7 @@ export default function EndOfCollection() {
       const res = await fetch("/api/newsletter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, company }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not sign you up.");
@@ -69,6 +70,19 @@ export default function EndOfCollection() {
               <label htmlFor="newsletter-email" className="sr-only">
                 Email address
               </label>
+              {/* Honeypot: hidden from real users; a filled value flags a bot. */}
+              <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", width: 1, height: 1, overflow: "hidden" }}>
+                <label htmlFor="newsletter-company">Company</label>
+                <input
+                  id="newsletter-company"
+                  type="text"
+                  name="company"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                />
+              </div>
               <input
                 id="newsletter-email"
                 type="email"

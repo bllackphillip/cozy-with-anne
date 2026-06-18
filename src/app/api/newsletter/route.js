@@ -1,50 +1,50 @@
-import { db } from "@/lib/firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { getAdminDb } from "@/lib/firebaseAdmin";
+import { FieldValue } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
+
+// firebase-admin needs the Node.js runtime (not Edge).
+export const runtime = "nodejs";
 
 /*
   NEWSLETTER SIGNUP ENDPOINT
 
-  Persists a newsletter subscriber to the Firestore `subscribers` collection so
-  sign-ups from the end-of-collection band are never lost (previously the form
-  only showed a local "thank you" and dropped the address).
+  Persists a subscriber to the Firestore `subscribers` collection. Validation runs
+  server-side here.
 
-  Validation runs server-side here, so the client can't bypass it.
+  SECURITY: written with the Firebase Admin SDK, so the public has NO direct write
+  access to Firestore. The rules deny all client writes to `subscribers`; only this
+  trusted server route can create one. A hidden honeypot field drops obvious bots.
 
-  ── REQUIRED Firestore security rule ────────────────────────────────────────
-  This writes with the client SDK, so the project's locked write rules must be
-  extended to allow *create only* on `subscribers` (no read/update/delete from
-  clients). Add to firestore.rules:
-
-    match /subscribers/{id} {
-      allow create: if request.resource.data.keys().hasOnly(
-                       ['email','status','createdAt'])
-                    && request.resource.data.email is string;
-      allow read, update, delete: if false;
-    }
-
-  Upgrade path: swapping this route to the Firebase Admin SDK would let the rules
-  stay fully locked. Sending a welcome email (e.g. Resend from
-  newsletter@cozywithanne.com) is an independent follow-up.
+  DEDUPE: the document id IS the (lowercased) email, so re-subscribing overwrites
+  the same row instead of creating duplicate sign-ups. `createdAt` therefore tracks
+  the most recent sign-up. A welcome email (Resend from newsletter@cozywithanne.com)
+  is a future follow-up.
 */
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export async function POST(req) {
   try {
-    const { email } = await req.json();
+    const { email, company } = await req.json();
+
+    // Honeypot — accept silently and write nothing.
+    if (company) return NextResponse.json({ ok: true });
 
     if (!email?.trim()) {
       return NextResponse.json({ error: "Please enter your email address." }, { status: 400 });
     }
-    if (!EMAIL_RE.test(email.trim())) {
+    const clean = email.trim().toLowerCase();
+    if (!EMAIL_RE.test(clean)) {
       return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
     }
 
-    await addDoc(collection(db, "subscribers"), {
-      email: email.trim().slice(0, 200),
+    // '/' is invalid in a real email but would break a Firestore doc id (path
+    // separator), so guard it just in case the regex let one through.
+    const id = clean.slice(0, 1500).replace(/\//g, "_");
+    await getAdminDb().collection("subscribers").doc(id).set({
+      email: clean,
       status: "subscribed",
-      createdAt: serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
     });
 
     return NextResponse.json({ ok: true });

@@ -6,6 +6,7 @@ const inputClass =
 
 export default function CommissionForm() {
   const [form, setForm] = useState({ name: "", email: "", vision: "" });
+  const [company, setCompany] = useState(""); // honeypot — stays empty for humans
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
@@ -22,7 +23,7 @@ export default function CommissionForm() {
       const res = await fetch("/api/enquiry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: form.name, email: form.email, vision: form.vision }),
+        body: JSON.stringify({ name: form.name, email: form.email, vision: form.vision, company }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Request failed");
@@ -57,6 +58,19 @@ export default function CommissionForm() {
 
   return (
     <form onSubmit={submit} className="space-y-6">
+      {/* Honeypot: hidden from real users; a filled value flags a bot. */}
+      <div aria-hidden="true" style={{ position: "absolute", left: "-9999px", width: 1, height: 1, overflow: "hidden" }}>
+        <label htmlFor="commission-company">Company</label>
+        <input
+          id="commission-company"
+          type="text"
+          name="company"
+          tabIndex={-1}
+          autoComplete="off"
+          value={company}
+          onChange={(e) => setCompany(e.target.value)}
+        />
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
