@@ -1,0 +1,13 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Everything in Storage is public-facing imagery: artwork images under
+    // artworks/… and the studio/commission photos under site/… The whole site
+    // reads these with no authentication, so reads are open. Only the owner may
+    // upload, replace, or delete.
+    match /{allPaths=**} {
+      allow read:  if true;
+      allow write: if request.auth != null && request.auth.uid == 'LGJFmfcAEvcdezfn6ZZfLi27Bv42';
+    }
+  }
+}

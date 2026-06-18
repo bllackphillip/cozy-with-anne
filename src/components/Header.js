@@ -107,7 +107,13 @@ export default function Header() {
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        setPastHero(!entry.isIntersecting);
+        // We're "past the hero" only when the sentinel has scrolled UP to the
+        // header line (top ≤ header height). Using only `!isIntersecting` was
+        // the bug: on a hard load of a tall hero the sentinel starts BELOW the
+        // fold, which is also "not intersecting", so the header wrongly rendered
+        // solid until a client-side nav. boundingClientRect.top is the sentinel's
+        // real position, so below-the-fold (large positive top) stays transparent.
+        setPastHero(entry.boundingClientRect.top <= height);
       },
       { threshold: 0, rootMargin: `-${height}px 0px 0px 0px` },
     );

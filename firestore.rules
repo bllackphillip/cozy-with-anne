@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner() {
+      return request.auth != null && request.auth.uid == 'LGJFmfcAEvcdezfn6ZZfLi27Bv42';
+    }
+
+    // Public gallery; only Anne (the owner) edits.
+    match /artworks/{id} {
+      allow read:  if true;
+      allow write: if isOwner();
+    }
+
+    // Enquiries and subscribers are created ONLY by the server via the Admin SDK
+    // (/api/enquiry, /api/newsletter), which bypasses these rules. The public has
+    // no direct create access. Anne reads and manages them in /admin.
+    match /enquiries/{id} {
+      allow create: if false;
+      allow read, update, delete: if isOwner();
+    }
+
+    match /subscribers/{id} {
+      allow create: if false;
+      allow read, update, delete: if isOwner();
+    }
+
+    // Orders are written by the Stripe webhook (Admin SDK). No client writes.
+    match /orders/{id} {
+      allow read:  if isOwner();
+      allow write: if false;
+    }
+
+    // Deny everything not explicitly matched above.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

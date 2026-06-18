@@ -8,6 +8,7 @@ import { useCart } from "@/context/CartContext";
 import ImageZoom from "@/components/ImageZoom";
 import ThumbnailStrip from "@/components/ThumbnailStrip";
 import TrustStrip from "@/components/TrustStrip";
+import MoreLikeThis from "@/components/MoreLikeThis";
 
 export default function OriginalProductPage({ params }) {
   const { id } = use(params);
@@ -127,6 +128,14 @@ export default function OriginalProductPage({ params }) {
           </div>
         </div>
       </div>
+
+      <MoreLikeThis
+        heading="More original paintings"
+        currentId={artwork.id}
+        variant="original"
+        type="original"
+        hrefBase="/shop/originals"
+      />
     </div>
   );
 }

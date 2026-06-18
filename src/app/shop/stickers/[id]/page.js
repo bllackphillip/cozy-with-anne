@@ -8,6 +8,7 @@ import { useCart } from "@/context/CartContext";
 import ImageZoom from "@/components/ImageZoom";
 import ThumbnailStrip from "@/components/ThumbnailStrip";
 import TrustStrip from "@/components/TrustStrip";
+import MoreLikeThis from "@/components/MoreLikeThis";
 
 // Fallback only — the real size/price is read from the artwork's Firebase data.
 const DEFAULT_STICKER_SIZE = { label: "7 cm", price: 3 };
@@ -186,6 +187,14 @@ export default function StickerProductPage({ params }) {
           </div>
         </div>
       </div>
+
+      <MoreLikeThis
+        heading="More stickers"
+        currentId={artwork.id}
+        variant="sticker"
+        type="sticker"
+        hrefBase="/shop/stickers"
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { useCart } from "@/context/CartContext";
 import ImageZoom from "@/components/ImageZoom";
 import ThumbnailStrip from "@/components/ThumbnailStrip";
 import TrustStrip from "@/components/TrustStrip";
+import MoreLikeThis from "@/components/MoreLikeThis";
 
 export default function PrintProductPage({ params }) {
   const { id } = use(params);
@@ -163,6 +164,14 @@ export default function PrintProductPage({ params }) {
           </div>
         </div>
       </div>
+
+      <MoreLikeThis
+        heading="More prints"
+        currentId={artwork.id}
+        variant="print"
+        type="print"
+        hrefBase="/shop/prints"
+      />
     </div>
   );
 }

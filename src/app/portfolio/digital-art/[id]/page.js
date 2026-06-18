@@ -6,6 +6,7 @@ import { getArtworkById } from "@/lib/db";
 import { getImagesFromFolder } from "@/lib/storage";
 import ImageZoom from "@/components/ImageZoom";
 import ThumbnailStrip from "@/components/ThumbnailStrip";
+import MoreLikeThis from "@/components/MoreLikeThis";
 
 export default function DigitalArtDetailPage({ params }) {
   const { id } = use(params);
@@ -96,6 +97,14 @@ export default function DigitalArtDetailPage({ params }) {
           </div>
         </div>
       </div>
+
+      <MoreLikeThis
+        heading="See more of my digital art"
+        currentId={artwork.id}
+        variant="digital"
+        type="original"
+        hrefBase="/portfolio/digital-art"
+      />
     </div>
   );
 }

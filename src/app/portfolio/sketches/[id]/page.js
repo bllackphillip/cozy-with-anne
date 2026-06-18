@@ -6,6 +6,7 @@ import { getArtworkById } from "@/lib/db";
 import { getImagesFromFolder } from "@/lib/storage";
 import ImageZoom from "@/components/ImageZoom";
 import ThumbnailStrip from "@/components/ThumbnailStrip";
+import MoreLikeThis from "@/components/MoreLikeThis";
 
 export default function SketchDetailPage({ params }) {
   const { id } = use(params);
@@ -78,6 +79,14 @@ export default function SketchDetailPage({ params }) {
           </div>
         </div>
       </div>
+
+      <MoreLikeThis
+        heading="See more of my sketches"
+        currentId={artwork.id}
+        variant="sketch"
+        type="original"
+        hrefBase="/portfolio/sketches"
+      />
     </div>
   );
 }

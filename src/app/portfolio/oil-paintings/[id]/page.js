@@ -6,6 +6,7 @@ import { getArtworkById } from "@/lib/db";
 import { getImagesFromFolder } from "@/lib/storage";
 import ImageZoom from "@/components/ImageZoom";
 import ThumbnailStrip from "@/components/ThumbnailStrip";
+import MoreLikeThis from "@/components/MoreLikeThis";
 
 export default function OilPaintingDetailPage({ params }) {
   const { id } = use(params);
@@ -104,6 +105,14 @@ export default function OilPaintingDetailPage({ params }) {
           </div>
         </div>
       </div>
+
+      <MoreLikeThis
+        heading="See more of my oil paintings"
+        currentId={artwork.id}
+        variant="oil"
+        type="original"
+        hrefBase="/portfolio/oil-paintings"
+      />
     </div>
   );
 }
