@@ -9,8 +9,9 @@ import { useState } from "react";
   same theme-adaptive band (--color-surface-2) as the homepage Featured Works.
 
   The signup persists to the Firestore `subscribers` collection via
-  /api/newsletter (validated server-side). A welcome email from
-  newsletter@cozywithanne.com is a future follow-up.
+  /api/newsletter (validated server-side), which sends a warm welcome email to
+  first-time subscribers. A repeat sign-up is detected server-side and shown a
+  distinct "already on the list" message instead.
 */
 const NEWSLETTER_ENDING =
   "I'll send a gentle note whenever new artworks arrive, share the occasional discount or giveaway, and let you know where to find me next at local art-market pop-ups.";
@@ -29,6 +30,7 @@ export default function EndOfCollection({
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState(""); // honeypot — stays empty for humans
   const [done, setDone] = useState(false);
+  const [already, setAlready] = useState(false); // email was already subscribed
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -45,6 +47,7 @@ export default function EndOfCollection({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not sign you up.");
+      setAlready(Boolean(data.alreadySubscribed));
       setDone(true);
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again.");
@@ -67,9 +70,15 @@ export default function EndOfCollection({
         </p>
 
         {done ? (
-          <p className="mt-8 text-[var(--color-accent)] font-medium">
-            Thank you - you&apos;re on the list. I&apos;ll be in touch soon 💌
-          </p>
+          already ? (
+            <p className="mt-8 text-[var(--color-accent)] font-medium">
+              You&apos;re already signed up to my newsletter. Thanks for being awesome! Love, Anne 💌
+            </p>
+          ) : (
+            <p className="mt-8 text-[var(--color-accent)] font-medium">
+              Thank you for signing up for the newsletter! You&apos;ll receive a warm welcome e-mail shortly. With love, Anne 💌
+            </p>
+          )
         ) : (
           <>
             <form

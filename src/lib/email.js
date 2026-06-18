@@ -270,3 +270,63 @@ export async function sendEnquiryEmails({ name, email, vision, attachmentUrl }) 
     console.error("Admin enquiry alert failed:", err);
   }
 }
+
+/* ── NEWSLETTER WELCOME EMAIL ────────────────────────────────────────────────
+   Sent from /api/newsletter the FIRST time an email subscribes (a repeat sign-up
+   gets no second welcome). A warm welcome in Anne's voice: what the newsletter is
+   for, and the ways to reach her. Same best-effort, RESEND-gated contract as the
+   order + enquiry emails. */
+
+// WhatsApp Business — kept in sync with src/data/social.js (international number,
+// no "+" or leading 0).
+const WHATSAPP_URL = "https://wa.me/31630457419";
+
+function newsletterWelcomeHtml() {
+  return `
+  <div style="background:${BG};padding:32px 0;font-family:Georgia,'Times New Roman',serif;">
+    <div style="max-width:560px;margin:0 auto;background:#fffdfb;border-radius:16px;overflow:hidden;border:1px solid #ece3d8;">
+      <div style="padding:28px 32px;">
+        <h1 style="margin:0 0 12px;color:${ACCENT};font-size:24px;">Welcome - I'm so glad you're here.</h1>
+        <p style="color:${PLUM};line-height:1.6;font-size:15px;">
+          Thank you for joining my little newsletter. It is where I share the parts of
+          this small art practice I am most excited about, sent gently and never too often.
+        </p>
+        <p style="color:${PLUM};line-height:1.6;font-size:15px;margin:0 0 6px;">Here is what to expect:</p>
+        <ul style="color:${PLUM};line-height:1.7;font-size:15px;margin:0 0 12px;padding-left:20px;">
+          <li>A gentle note whenever new artworks arrive</li>
+          <li>The occasional discount or little giveaway</li>
+          <li>Where to find me next at local art-market pop-ups</li>
+        </ul>
+        <p style="color:${PLUM};line-height:1.6;font-size:15px;margin:0 0 6px;">
+          And whenever you would like to reach me, I would love to hear from you:
+        </p>
+        <ul style="color:${PLUM};line-height:1.8;font-size:15px;margin:0 0 8px;padding-left:20px;list-style:none;">
+          <li>💬 <a href="${WHATSAPP_URL}" style="color:${ACCENT};">Message me on WhatsApp</a></li>
+          <li>✉️ <a href="mailto:hello@cozywithanne.com" style="color:${ACCENT};">hello@cozywithanne.com</a> - for anything at all</li>
+          <li>🛟 <a href="mailto:support@cozywithanne.com" style="color:${ACCENT};">support@cozywithanne.com</a> - for help with an order</li>
+        </ul>
+        <p style="color:${ACCENT};font-size:16px;margin-top:20px;">With love,<br/>Anne</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+export async function sendNewsletterWelcome({ email }) {
+  const c = getClient();
+  if (!c) {
+    console.warn("RESEND_API_KEY not set; skipping newsletter welcome email.");
+    return;
+  }
+  if (!email) return;
+  try {
+    await c.emails.send({
+      from: FROM,
+      to: email,
+      replyTo: REPLY_TO,
+      subject: "Welcome to Cozy with Anne 💌",
+      html: newsletterWelcomeHtml(),
+    });
+  } catch (err) {
+    console.error("Newsletter welcome email failed:", err);
+  }
+}
