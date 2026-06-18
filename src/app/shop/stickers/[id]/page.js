@@ -189,7 +189,7 @@ export default function StickerProductPage({ params }) {
       </div>
 
       <MoreLikeThis
-        heading="More stickers"
+        heading="Shop more stickers"
         currentId={artwork.id}
         variant="sticker"
         type="sticker"

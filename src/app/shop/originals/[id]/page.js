@@ -130,7 +130,7 @@ export default function OriginalProductPage({ params }) {
       </div>
 
       <MoreLikeThis
-        heading="More original paintings"
+        heading="Shop more originals"
         currentId={artwork.id}
         variant="original"
         type="original"

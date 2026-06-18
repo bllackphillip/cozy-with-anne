@@ -166,7 +166,7 @@ export default function PrintProductPage({ params }) {
       </div>
 
       <MoreLikeThis
-        heading="More prints"
+        heading="Shop more prints"
         currentId={artwork.id}
         variant="print"
         type="print"

@@ -73,7 +73,7 @@ export default function MoreLikeThis({
   return (
     <section className="mt-16 pt-10 border-t border-[var(--color-border)]">
       <h2
-        className="text-xl sm:text-2xl text-[var(--color-accent)] mb-6"
+        className="text-xl sm:text-2xl text-[var(--color-accent)] mb-6 text-center"
         style={{ fontFamily: "var(--font-fraunces)" }}
       >
         {heading}
@@ -86,8 +86,8 @@ export default function MoreLikeThis({
             type={type}
             href={`${hrefBase}/${art.id}`}
           >
-            <h3 className="text-xs font-semibold text-gray-900 truncate">{art.title}</h3>
-            <p className="text-xs text-gray-500 truncate">{art.medium}</p>
+            <h3 className="text-xs font-semibold text-gray-900 truncate text-center">{art.title}</h3>
+            <p className="text-xs text-gray-500 truncate text-center">{art.medium}</p>
           </ArtworkCard>
         ))}
       </div>
