@@ -77,31 +77,37 @@ export default function Header() {
   const [pastHero, setPastHero] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [mobileExpanded, setMobileExpanded] = useState(null);
-  const [browserPathname, setBrowserPathname] = useState(null);
+  const [resolvedPathname, setResolvedPathname] = useState(null);
   const headerRef = useRef(null);
   const { cartCount, setIsCartOpen } = useCart();
-  const nextPathname = usePathname();
-  const pathname = nextPathname || browserPathname;
-  const isHome = pathname === "/";
-  const pathnameReady = Boolean(pathname);
+  const routerPathname = usePathname();
 
   /*
-    On a statically prerendered hard load, Next can render this preserved root
-    Client Component without a pathname. The live Vercel HTML therefore took
-    the non-home branch and stayed solid, while client navigation worked because
-    usePathname() was then populated.
+    THE root cause of the long-running "homepage header is solid at the top on a
+    hard load, but fine after navigating away and back" bug:
 
-    Resolve the browser path after hydration. The pre-hydration route hint in
-    layout.js and the narrow CSS fallback in globals.css protect first paint;
-    once this state lands, the normal React classes and aria state take over.
+    On the statically prerendered homepage, usePathname() is seeded from the
+    build and comes back as a STALE, truthy, non-"/" value. It stays that way on
+    the client until the first client navigation re-evaluates the router — which
+    is exactly why navigating away and back "fixed" it. Because the value is
+    truthy, falling back to the browser URL only when it is falsy (the previous
+    attempt) never triggers.
+
+    The browser URL is always authoritative, so after mount we read
+    window.location.pathname directly and re-sync on every navigation the router
+    reports. `?? routerPathname ?? ""` keeps the first (pre-mount) render a safe
+    string so the nav active-state .startsWith() calls below never see null.
   */
+  const pathname = resolvedPathname ?? routerPathname ?? "";
+  const isHome = pathname === "/";
+  // Stays "false" until the browser-authoritative path lands after mount. The
+  // first-paint CSS fallback in globals.css keys off this to hold the homepage
+  // header transparent before React has resolved the real route (no flash).
+  const homeResolved = resolvedPathname !== null;
+
   useEffect(() => {
-    if (nextPathname) return;
-    const frame = requestAnimationFrame(() => {
-      setBrowserPathname(window.location.pathname);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [nextPathname]);
+    setResolvedPathname(window.location.pathname);
+  }, [routerPathname]);
 
   // Derive close-on-navigate during render — the React-recommended alternative
   // to setState-in-effect. When pathname changes, React re-renders immediately
@@ -213,7 +219,7 @@ export default function Header() {
     <header
       ref={headerRef}
       className="site-header sticky top-0 z-50"
-      data-pathname-ready={pathnameReady ? "true" : "false"}
+      data-home-resolved={homeResolved ? "true" : "false"}
     >
       {/* Persistent background layer — always in the DOM from first render.
           background-attachment: fixed is set once and never toggled, so the

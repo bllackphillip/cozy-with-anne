@@ -83,15 +83,16 @@ body {
 /*
   Homepage header first-paint fallback.
 
-  The preserved root Client Component can be statically prerendered without a
-  pathname, so its server HTML takes the solid non-home branch. layout.js marks
-  the browser's actual initial route before the body paints. These selectors
-  correct only that unresolved first frame; once Header resolves the pathname,
-  data-pathname-ready becomes true and the normal React/sentinel state takes
-  complete control.
+  On the statically prerendered homepage, usePathname() is seeded with a stale,
+  non-"/" value, so the server HTML takes the solid non-home branch. layout.js
+  marks the browser's real initial route before the body paints; Header reads the
+  authoritative window.location.pathname after mount and flips data-home-resolved
+  to "true". These selectors correct only that unresolved first frame (so there
+  is no solid-header flash on home); once Header resolves the route the normal
+  React/sentinel state takes complete control.
 */
 html[data-initial-page="home"]
-  .site-header[data-pathname-ready="false"]
+  .site-header[data-home-resolved="false"]
   .site-header-bg {
   opacity: 0;
   pointer-events: none;
@@ -99,14 +100,14 @@ html[data-initial-page="home"]
 }
 
 html[data-initial-page="home"]
-  .site-header[data-pathname-ready="false"]
+  .site-header[data-home-resolved="false"]
   .site-header-logo {
   opacity: 0;
   pointer-events: none;
 }
 
 html[data-initial-page="home"]
-  .site-header[data-pathname-ready="false"]
+  .site-header[data-home-resolved="false"]
   .site-header-home-link {
   background-color: var(--color-accent);
   color: var(--color-bg);
