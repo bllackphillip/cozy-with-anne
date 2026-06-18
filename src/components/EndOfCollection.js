@@ -12,7 +12,20 @@ import { useState } from "react";
   /api/newsletter (validated server-side). A welcome email from
   newsletter@cozywithanne.com is a future follow-up.
 */
-export default function EndOfCollection() {
+const NEWSLETTER_ENDING =
+  "I'll send a gentle note whenever new artworks arrive, share the occasional discount or giveaway, and let you know where to find me next at local art-market pop-ups.";
+
+// Defaults = the portfolio-grid version (shown at the foot of each portfolio
+// section). The homepage passes its own heading + intro for a different opener,
+// while sharing the same closing line, form and button.
+const DEFAULT_HEADING = "That's it, for now";
+const DEFAULT_INTRO =
+  "But the website is freshly launched, and each collection has plenty more on the way. Join my little newsletter to follow along -";
+
+export default function EndOfCollection({
+  heading = DEFAULT_HEADING,
+  intro = DEFAULT_INTRO,
+}) {
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState(""); // honeypot — stays empty for humans
   const [done, setDone] = useState(false);
@@ -47,14 +60,10 @@ export default function EndOfCollection() {
           className="text-2xl sm:text-3xl text-[var(--color-accent)]"
           style={{ fontFamily: "var(--font-fraunces)" }}
         >
-          That&apos;s it, for now
+          {heading}
         </h2>
         <p className="mt-4 text-gray-700 leading-relaxed">
-          But the website is freshly launched, and each collection has plenty
-          more on the way. Join my little newsletter to follow along - I&apos;ll
-          send a gentle note whenever new artworks arrive, share the occasional
-          discount or giveaway, and let you know where to find me next at local
-          art-market pop-ups.
+          {intro} {NEWSLETTER_ENDING}
         </p>
 
         {done ? (
@@ -98,7 +107,7 @@ export default function EndOfCollection() {
                 disabled={submitting}
                 className="px-8 py-3 text-sm font-medium site-btn-active whitespace-nowrap disabled:opacity-70"
               >
-                {submitting ? "Adding you..." : "Keep me posted"}
+                {submitting ? "Adding you..." : "Join"}
               </button>
             </form>
             {error && (

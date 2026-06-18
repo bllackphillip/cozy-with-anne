@@ -7,6 +7,7 @@ import FeaturedArtworkCarousel from "@/components/FeaturedArtworkCarousel";
 import CommissionsPreview from "@/components/CommissionsPreview";
 import Testimonials from "@/components/Testimonials";
 import SocialFollow from "@/components/SocialFollow";
+import EndOfCollection from "@/components/EndOfCollection";
 import { unstable_cache } from "next/cache";
 import { getImagesFromFolder } from "@/lib/storage";
 import { getFeaturedArtworks, getPortfolioPath } from "@/lib/db";
@@ -123,6 +124,15 @@ export default async function Home() {
       </ScrollReveal>
       <ScrollReveal>
         <SocialFollow />
+      </ScrollReveal>
+
+      {/* Newsletter — homepage variant (own heading + opener, shared closing line
+          and form). The "That's it, for now" version stays on the portfolio grids. */}
+      <ScrollReveal>
+        <EndOfCollection
+          heading="Join my newsletter"
+          intro="There's always something new taking shape in the studio. If you'd like to keep up with it, leave your email and"
+        />
       </ScrollReveal>
     </div>
   );
