@@ -1,0 +1,338 @@
+@import "tailwindcss";
+
+/* ── PALETTE THEMES ────────────────────────────────────────────────────────
+   Each [data-theme] block defines all runtime colour tokens.
+   The inline script in layout.js reads localStorage and sets data-theme on
+   <html> before React hydrates, preventing any flash of the wrong theme.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root,
+[data-theme="atelier"] {
+  --background: #faf6f0;
+  --foreground: #352929;
+  --color-bg: #faf6f0;
+  --color-header: #5c4448;
+  --color-footer: #51383c;
+  --color-accent: #a06868;
+  --color-surface: #e8d8d0;
+  --color-surface-2: #f5eae6;
+  --color-border: #e8d8d0;
+  --color-border-warm: #c9bfad;
+  --floral-top-image: url("/floral-atelier.png");
+  --floral-bottom-image: url("/footerfloral.png");
+}
+
+[data-theme="evening"] {
+  --background: #f2f2f8;
+  --foreground: #181820;
+  --color-bg: #f2f2f8;
+  --color-header: #4d455c;
+  --color-footer: #433e55;
+  --color-accent: #6668a0;
+  --color-surface: #c8c8dc;
+  --color-surface-2: #e4e4f2;
+  --color-border: #c4c4d8;
+  --color-border-warm: #acacc4;
+  --floral-top-image: url("/floral-evening.png");
+  --floral-bottom-image: url("/footerfloral-evening.png");
+}
+
+[data-theme="garden"] {
+  --background: #f4f4ee;
+  --foreground: #202220;
+  --color-bg: #f4f4ee;
+  --color-header: #515344;
+  --color-footer: #414638;
+  --color-accent: #6a7852;
+  --color-surface: #d4d4c0;
+  --color-surface-2: #e8e8e0;
+  --color-border: #d0d0c0;
+  --color-border-warm: #b8b8a4;
+  --floral-top-image: url("/floral-garden.png");
+  --floral-bottom-image: url("/footerfloral-garden.png");
+}
+
+[data-theme="beeswax"] {
+  --background: #f5f3ef;
+  --foreground: #2a2010;
+  --color-bg: #f5f3ef;
+  --color-header: #51483f;
+  --color-footer: #4c443c;
+  --color-accent: #786a50;
+  --color-surface: #dedad0;
+  --color-surface-2: #eceae4;
+  --color-border: #d4d0c4;
+  --color-border-warm: #beb8a8;
+  --floral-top-image: url("/floral-beeswax.png");
+  --floral-bottom-image: url("/footerfloral-beeswax.png");
+}
+
+/* overflow-y: scroll forces the scrollbar to always be visible, even on short pages.
+   This prevents the layout from shifting when navigating between tall and short pages. */
+html {
+  overflow-y: scroll;
+  background-color: var(--background);
+}
+
+body {
+  /* No background on body — the html texture shows through everywhere */
+  background: transparent;
+  color: var(--foreground);
+}
+
+/* Floral pattern — hero section + header.
+   background-attachment: fixed pins the tile to the viewport so the pattern
+   flows seamlessly across the header/hero boundary as the user scrolls.
+   filter is set per-theme via --color-floral-filter to tint the SVG. */
+.floral-top {
+  background-color: var(--color-header);
+  background-image: var(--floral-top-image);
+  background-repeat: repeat;
+  background-position: top left;
+  background-size: 800px 800px;
+  background-attachment: fixed;
+}
+
+@media (max-width: 767px) {
+  .floral-top {
+    background-size: 600px 600px;
+  }
+}
+
+/* Footer — flowers bloom upward from the bottom edge, repeating left to right. */
+.floral-bottom {
+  background-color: var(--color-footer);
+  background-image: var(--floral-bottom-image);
+  background-repeat: repeat-x;
+  background-position: bottom;
+  background-size: auto 380px;
+}
+
+/* Site-wide pill button — colours come from the active theme.
+   9999px border-radius guarantees a pill shape at any element height. */
+.site-btn {
+  background-color: var(--color-bg);
+  color: var(--color-accent);
+  border-radius: 9999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.site-btn:hover {
+  background-color: var(--color-surface);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+}
+
+.site-btn-active {
+  background-color: var(--color-accent);
+  color: var(--color-bg);
+  border-radius: 9999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
+}
+
+/* warm-btn — active filter button style used in shop/portfolio filters */
+.warm-btn {
+  background-color: var(--color-surface-2);
+  background-image: url("/background-texture.png");
+  background-repeat: repeat;
+  background-attachment: fixed;
+  border: 1px solid var(--color-border-warm);
+}
+
+.hover-warm-btn:hover {
+  background-color: var(--color-surface-2);
+  background-image: url("/background-texture.png");
+  background-repeat: repeat;
+  background-attachment: fixed;
+  border: 1px solid var(--color-border-warm);
+}
+
+/* art-frame — slim image border on cards, banners, and photos site-wide */
+.art-frame {
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* ── ADMIN BACK OFFICE ─────────────────────────────────────────────────────
+   Warm + branded but clean (Option B): white content cards sit on a soft warm
+   surface, with theme-token accents so the dashboard matches the storefront
+   palette (and the theme switcher) without the floral chrome competing with
+   dense data. The sidebar/login reuse .floral-top for an on-brand touch. */
+.admin-bg {
+  background-color: var(--color-surface-2);
+}
+.admin-btn {
+  background-color: var(--color-accent);
+  color: #fff;
+  border-radius: 0.5rem;
+  transition: opacity 0.15s, box-shadow 0.15s;
+}
+.admin-btn:hover {
+  opacity: 0.92;
+}
+
+/* All buttons get a pointer cursor — consistent UX across the site.
+   In Tailwind v4, custom base styles must go inside @layer base. */
+@layer base {
+  button {
+    cursor: pointer;
+  }
+}
+
+/* Hero logo entrance — drops from above with physics-based easing per segment */
+@keyframes heroLand {
+  0% {
+    opacity: 0;
+    transform: translateY(-1.75rem);
+    animation-timing-function: ease-in; /* accelerates like gravity */
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(0.35rem);
+    animation-timing-function: ease-out; /* spring rebounds, decelerates */
+  }
+  74% {
+    transform: translateY(-0.07rem);
+    animation-timing-function: ease-in-out; /* smooth micro-oscillation */
+  }
+  89% {
+    transform: translateY(0.06rem);
+    animation-timing-function: ease-out; /* settles gently to rest */
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.hero-enter {
+  animation: heroLand 0.65s linear both;
+}
+
+/* Page wrapper — 150ms opacity fade on load hides any render flash before
+   the browser has finished computing layout and stacking order. */
+.page-enter {
+  animation: fadeIn 0.15s ease-out both;
+}
+
+/* Tagline entrance — fades in after the logo has landed */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tagline-enter {
+  animation: fadeIn 0.5s ease-out 650ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-enter,
+  .tagline-enter {
+    animation: none;
+  }
+}
+
+/* Typewriter cursor blink — used by HeroTagline component */
+@keyframes cursorBlink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.typewriter-cursor {
+  animation: cursorBlink 0.6s step-end infinite;
+}
+
+/* Scroll-triggered reveal — pure fade, no movement */
+.scroll-reveal {
+  opacity: 0;
+  transition: opacity 0.6s ease-out;
+}
+
+.scroll-reveal.in-view {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal {
+    transition: none;
+    opacity: 1;
+  }
+}
+
+/* Mobile menu slide-in animation — each item staggers from the right */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(2rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Hide the hero section on mobile when the hamburger menu is open.
+   display:none removes it from layout entirely so no empty space remains. */
+@media (max-width: 767px) {
+  html.mobile-menu-open .hero-mobile-hide {
+    display: none;
+  }
+}
+
+/* policy-prose — shared typographic styling for the legal/policy pages
+   (shipping, refund, privacy, terms). Lets each page write plain semantic
+   HTML without repeating utility classes on every element. */
+.policy-prose h2 {
+  font-family: var(--font-fraunces);
+  color: var(--color-accent);
+  font-size: 1.25rem;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+}
+.policy-prose h3 {
+  font-weight: 600;
+  color: var(--foreground);
+  font-size: 1rem;
+  margin-top: 1.25rem;
+  margin-bottom: 0.35rem;
+}
+.policy-prose p {
+  margin-bottom: 1rem;
+}
+.policy-prose ul,
+.policy-prose ol {
+  margin: 0 0 1rem 1.25rem;
+  list-style: disc;
+}
+.policy-prose ol {
+  list-style: decimal;
+}
+.policy-prose li {
+  margin-bottom: 0.4rem;
+}
+.policy-prose a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.policy-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+.policy-prose th,
+.policy-prose td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+}
+.policy-prose th {
+  background-color: var(--color-surface-2);
+}
