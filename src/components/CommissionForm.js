@@ -6,10 +6,13 @@ const inputClass =
 
 export default function CommissionForm() {
   const [form, setForm] = useState({ name: "", email: "", vision: "" });
+  const [file, setFile] = useState(null); // optional reference image
   const [company, setCompany] = useState(""); // honeypot — stays empty for humans
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+
+  const MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 MB — must match the API route
 
   function update(e) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -17,14 +20,23 @@ export default function CommissionForm() {
 
   async function submit(e) {
     e.preventDefault();
+    if (file && file.size > MAX_FILE_BYTES) {
+      setError("That reference image is too large (max 8 MB). Please choose a smaller file.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/enquiry", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: form.name, email: form.email, vision: form.vision, company }),
-      });
+      // FormData (not JSON) so the optional reference image is uploaded too.
+      // No Content-Type header — the browser sets the multipart boundary.
+      const body = new FormData();
+      body.append("name", form.name);
+      body.append("email", form.email);
+      body.append("vision", form.vision);
+      body.append("company", company);
+      if (file) body.append("attachment", file);
+
+      const res = await fetch("/api/enquiry", { method: "POST", body });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Request failed");
       setSubmitted(true);
@@ -124,6 +136,7 @@ export default function CommissionForm() {
           type="file"
           name="attachment"
           accept="image/*,.pdf"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-medium file:bg-[var(--color-surface-2)] file:text-[var(--color-accent)] hover:file:bg-[#ede0db] file:cursor-pointer"
         />
       </div>

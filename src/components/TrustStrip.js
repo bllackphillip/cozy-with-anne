@@ -1,4 +1,6 @@
+"use client";
 import Link from "next/link";
+import { useExperiment } from "@/lib/useExperiment";
 
 /*
   B8 — trust / reassurance strip shown under the Add to Cart on every product
@@ -7,6 +9,9 @@ import Link from "next/link";
     - clear returns (Oghazi et al. 2018; McKnight Integrity)
     - honest eco packaging (McKnight Integrity; Oliver 2024)
   All colours are theme tokens so it adapts across the 4 palettes.
+
+  Experiment D (§4.6): the whole strip is shown by default and hidden when the
+  researcher sets ?expD=hidden, for the security-signals comparison.
 */
 
 function LockIcon() {
@@ -37,6 +42,8 @@ function LeafIcon() {
 }
 
 export default function TrustStrip() {
+  const variant = useExperiment("D", "shown");
+  if (variant === "hidden") return null;
   return (
     <ul className="mt-6 flex flex-col gap-2.5 text-sm text-gray-600">
       <li className="flex items-start gap-2.5">

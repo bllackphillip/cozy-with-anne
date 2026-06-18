@@ -96,6 +96,17 @@ export default function EnquiriesPage() {
 
               <p className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">{e.vision}</p>
 
+              {e.attachmentUrl && (
+                <a
+                  href={e.attachmentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 text-sm text-[var(--color-accent)] underline hover:opacity-80"
+                >
+                  📎 View reference image
+                </a>
+              )}
+
               <div className="mt-4 flex items-center gap-3">
                 <a
                   href={`mailto:${e.email}?subject=Re: your commission enquiry`}

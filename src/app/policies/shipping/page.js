@@ -9,7 +9,7 @@ export default function ShippingPolicyPage() {
   return (
     <PolicyPage title="Shipping Policy">
       <p>
-        <strong>Processing times are separate from the shipping times you see at checkout.</strong>
+        <strong>Processing times are separate from the shipping options and costs you choose at checkout.</strong>
       </p>
       <p>
         All orders (except commissions) are processed within 1 to 7 business days after receiving your
@@ -33,31 +33,34 @@ export default function ShippingPolicyPage() {
         <strong>signature required.</strong>
       </p>
 
-      <h2>Shipping times for Priority Shipping with FedEx</h2>
-      <p>(Any order containing at least one original painting or commission.)</p>
+      <h2>Shipping costs and times</h2>
+      <p>
+        Shipping is calculated by zone and added at checkout, where you choose the zone that matches your
+        delivery address:
+      </p>
       <table>
         <thead>
           <tr>
             <th>Zone</th>
-            <th>Shipping Time</th>
-            <th>Cost (light, medium and heavy packages)</th>
+            <th>Shipping time</th>
+            <th>Cost</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td>USA, Canada, UK</td>
-            <td>2–5 business days</td>
-            <td>15–45€</td>
+            <td>Netherlands</td>
+            <td>1–3 business days</td>
+            <td>€5 (free over €20)</td>
           </tr>
           <tr>
-            <td>EU</td>
+            <td>Europe</td>
             <td>2–7 business days</td>
-            <td>10–45€</td>
+            <td>€25 (free over €300)</td>
           </tr>
           <tr>
-            <td>Rest of World</td>
+            <td>Rest of world</td>
             <td>5–15 business days</td>
-            <td>20–50€</td>
+            <td>€50</td>
           </tr>
         </tbody>
       </table>

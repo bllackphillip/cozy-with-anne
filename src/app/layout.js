@@ -2,6 +2,7 @@ import { Geist, Dancing_Script, Fraunces } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import SiteChrome from "@/components/SiteChrome";
+import ExperimentSync from "@/components/ExperimentSync";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -40,6 +41,7 @@ export default function RootLayout({ children }) {
       {/* flex flex-col = vertical flex so footer can stick to bottom via mt-auto */}
       <body className={`${geistSans.variable} ${dancingScript.variable} ${fraunces.variable} font-sans min-h-screen flex flex-col antialiased`}>
         <Providers>
+          <ExperimentSync />
           <SiteChrome>{children}</SiteChrome>
         </Providers>
       </body>

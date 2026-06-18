@@ -17,6 +17,7 @@ const getCachedCommissionImages = unstable_cache(
   { revalidate: 300 }
 );
 import CommissionForm from "@/components/CommissionForm";
+import ProgressPhotoLine from "@/components/ProgressPhotoLine";
 import BannerCarousel from "@/components/BannerCarousel";
 import { COMMISSIONS_INTRO } from "@/components/CommissionsPreview";
 
@@ -67,7 +68,12 @@ const STEPS = [
     secondIcon: Palette,
     number: "05",
     title: "I paint for you",
-    desc: "I'll share progress photos as the painting develops, so you can see it come to life.",
+    desc: (
+      <>
+        I bring your piece to life on the canvas.
+        <ProgressPhotoLine />
+      </>
+    ),
   },
   {
     icon: Package,

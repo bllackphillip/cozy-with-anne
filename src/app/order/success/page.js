@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { stripe } from "@/lib/stripe";
 import ClearCart from "./ClearCart";
+import ConfirmationMessage from "./ConfirmationMessage";
 
 // Reads the real Stripe session, so it must run server-side per request.
 export const runtime = "nodejs";
@@ -64,6 +65,10 @@ export default async function OrderSuccessPage({ searchParams }) {
   const firstName = session?.customer_details?.name?.split(" ")[0];
   const email = session?.customer_details?.email;
   const lineItems = session?.line_items?.data ?? [];
+  const shippingCost =
+    session?.shipping_cost?.amount_total != null
+      ? session.shipping_cost.amount_total / 100
+      : null;
   const total = session ? session.amount_total / 100 : null;
 
   return (
@@ -71,25 +76,8 @@ export default async function OrderSuccessPage({ searchParams }) {
       {/* Empty the cart now that payment succeeded */}
       <ClearCart />
 
-      <div className="text-5xl mb-6">🎨</div>
-      <h1
-        className="text-3xl sm:text-4xl text-[var(--color-accent)]"
-        style={{ fontFamily: "var(--font-fraunces)" }}
-      >
-        Thank you{firstName ? `, ${firstName}` : ""} for your order!
-      </h1>
-      <p className="mt-6 text-gray-600 leading-relaxed">
-        Anne will pack your order with care and recycled materials, and send it
-        your way soon.
-        {email ? (
-          <>
-            {" "}A confirmation has been sent to{" "}
-            <span className="text-gray-800">{email}</span>.
-          </>
-        ) : (
-          <> You&apos;ll receive a confirmation email shortly.</>
-        )}
-      </p>
+      {/* Experiment A: warm artist-voice vs generic receipt copy */}
+      <ConfirmationMessage firstName={firstName} email={email} />
 
       {/* Order summary — only when we successfully retrieved the session */}
       {lineItems.length > 0 && (
@@ -107,6 +95,12 @@ export default async function OrderSuccessPage({ searchParams }) {
               </li>
             ))}
           </ul>
+          {shippingCost != null && (
+            <div className="flex justify-between pt-3 text-sm text-gray-600">
+              <span>Shipping</span>
+              <span>{shippingCost === 0 ? "Free" : `€${shippingCost.toFixed(2)}`}</span>
+            </div>
+          )}
           {total != null && (
             <div className="flex justify-between pt-3 mt-1 border-t border-[var(--color-border-warm)] text-sm font-semibold text-gray-900">
               <span>Total</span>

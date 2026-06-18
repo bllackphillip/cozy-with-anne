@@ -73,6 +73,10 @@ export async function POST(req) {
       customerName: session.customer_details?.name ?? null,
       shippingAddress: shipping?.address ?? null,
       items,
+      shippingCost:
+        session.shipping_cost?.amount_total != null
+          ? session.shipping_cost.amount_total / 100
+          : null,
       amountTotal: session.amount_total / 100,
       currency: session.currency,
       status: "paid",
@@ -97,12 +101,18 @@ export async function POST(req) {
       return NextResponse.json({ error: "Order save failed" }, { status: 500 });
     }
 
-    // Mark any purchased originals (1-of-1) as sold, so the shop shows them as
-    // Sold and they can't be bought twice. Idempotent (setting available:false
-    // again is harmless), so it's safe to run on every delivery and self-heals
-    // on a Stripe retry. Best-effort: a failure is logged but does not 500 the
-    // webhook, since the order is already recorded and Anne is alerted. The
-    // dot-path update leaves original.price untouched.
+    // Mark any purchased originals (1-of-1) as sold, in a transaction that also
+    // DETECTS a concurrent double-sale. Each original is claimed atomically:
+    //   - available is true  → set available:false and stamp soldOrderId = this
+    //     session (claims the piece; the dot-path leaves original.price untouched).
+    //   - already sold by THIS session → no-op (idempotent on a Stripe retry).
+    //   - already sold by a DIFFERENT order → a genuine oversell. We don't fail
+    //     the webhook (the payment already happened); instead we flag the order
+    //     so Anne can refund one buyer. (available:false with no soldOrderId is a
+    //     legacy-sold piece — we adopt it rather than false-flag a conflict.)
+    // Best-effort: a transaction failure is logged but does not 500 the webhook,
+    // since the order is already recorded and Anne is alerted.
+    const conflictArtworkIds = [];
     try {
       const originalIds = [
         ...new Set(
@@ -113,11 +123,43 @@ export async function POST(req) {
       ];
       await Promise.all(
         originalIds.map((artId) =>
-          adminDb.collection("artworks").doc(artId).update({ "original.available": false })
+          adminDb.runTransaction(async (tx) => {
+            const artRef = adminDb.collection("artworks").doc(artId);
+            const snap = await tx.get(artRef);
+            if (!snap.exists) return;
+            const original = snap.data().original ?? {};
+            if (
+              original.available === false &&
+              original.soldOrderId &&
+              original.soldOrderId !== session.id
+            ) {
+              conflictArtworkIds.push(artId);
+              return;
+            }
+            tx.update(artRef, {
+              "original.available": false,
+              "original.soldOrderId": session.id,
+            });
+          })
         )
       );
     } catch (err) {
       console.error("Failed to mark original(s) as sold:", err);
+    }
+
+    // Record any detected oversell on the order so the admin sees it and Anne's
+    // alert email can warn her to review/refund. Merge so the order doc is kept.
+    if (conflictArtworkIds.length) {
+      orderData.conflict = true;
+      orderData.conflictArtworkIds = conflictArtworkIds;
+      try {
+        await adminDb
+          .collection("orders")
+          .doc(session.id)
+          .set({ conflict: true, conflictArtworkIds }, { merge: true });
+      } catch (err) {
+        console.error("Failed to flag order conflict:", err);
+      }
     }
 
     // Confirmation to the buyer + alert to Anne, only on first delivery.

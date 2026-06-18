@@ -112,6 +112,35 @@ export async function POST(req) {
       });
     }
 
+    /*
+      SHIPPING — charge a real zone rate at checkout (the policy advertises one,
+      so it must actually apply). Subtotal drives the free-over-threshold logic.
+
+      Stripe limitation: Checkout shows these as buyer-selectable radios and
+      cannot bind a rate to the entered country, so a buyer self-selects their
+      zone. Acceptable for the dissertation (test-mode) build; documented in the
+      report. Rates are provisional pending Anne's final figures.
+    */
+    const subtotal = priced.reduce((sum, i) => sum + i.price * i.quantity, 0);
+    const shippingRate = (amount, name, minDays, maxDays) => ({
+      shipping_rate_data: {
+        type: "fixed_amount",
+        fixed_amount: { amount: Math.round(amount * 100), currency: "eur" },
+        display_name: name,
+        delivery_estimate: {
+          minimum: { unit: "business_day", value: minDays },
+          maximum: { unit: "business_day", value: maxDays },
+        },
+      },
+    });
+    const nl = subtotal >= 20 ? 0 : 5;
+    const eu = subtotal >= 300 ? 0 : 25;
+    const shipping_options = [
+      shippingRate(nl, nl === 0 ? "Netherlands - Free (over €20)" : "Netherlands", 1, 3),
+      shippingRate(eu, eu === 0 ? "Europe - Free (over €300)" : "Europe", 2, 7),
+      shippingRate(50, "Rest of world", 5, 15),
+    ];
+
     const line_items = priced.map((item) => ({
       price_data: {
         currency: "eur",
@@ -135,6 +164,7 @@ export async function POST(req) {
       shipping_address_collection: {
         allowed_countries: ["GB", "IE", "FR", "DE", "NL", "BE", "ES", "IT", "PT", "RO", "US", "CA", "AU"],
       },
+      shipping_options,
       metadata: {
         /*
           One metadata key PER item, not a single JSON blob. Stripe caps each

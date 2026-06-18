@@ -83,22 +83,26 @@ export default function Header() {
   const routerPathname = usePathname();
 
   /*
-    THE root cause of the long-running "homepage header is solid at the top on a
-    hard load, but fine after navigating away and back" bug:
+    THE root cause of the long-running "homepage header is solid / Home tab not
+    active on a hard load, but fine after navigating away and back" bug:
 
-    On the statically prerendered homepage, usePathname() is seeded from the
-    build and comes back as a STALE, truthy, non-"/" value. It stays that way on
-    the client until the first client navigation re-evaluates the router — which
-    is exactly why navigating away and back "fixed" it. Because the value is
-    truthy, falling back to the browser URL only when it is falsy (the previous
-    attempt) never triggers.
+    On the statically prerendered homepage ONLY, usePathname() comes back as an
+    EMPTY string at build time (other routes prerender their real path correctly
+    — verified in the deployed HTML: /about renders About active, but / renders
+    NO link active). Because the Home link matches with an exact `pathname === "/"`,
+    an empty string makes Home inactive and isHome false, so the header takes the
+    solid, non-home branch. Navigating away and back re-evaluated the router to a
+    real value, which is why it "fixed" itself.
 
-    The browser URL is always authoritative, so after mount we read
-    window.location.pathname directly and re-sync on every navigation the router
-    reports. `?? routerPathname ?? ""` keeps the first (pre-mount) render a safe
-    string so the nav active-state .startsWith() calls below never see null.
+    THE FIX is simply to normalise an empty pathname to "/": the only route that
+    ever yields an empty pathname is the index route, so `|| "/"` is safe and makes
+    the prerendered HTML itself correct (Home active, header transparent) with no
+    dependence on post-hydration timing. We still prefer the browser-authoritative
+    window.location.pathname after mount (resolvedPathname) so a hard-loaded inner
+    page and client navigations stay correct; `?? routerPathname ?? ""` keeps the
+    first render a safe string for the .startsWith() calls below.
   */
-  const pathname = resolvedPathname ?? routerPathname ?? "";
+  const pathname = (resolvedPathname ?? routerPathname ?? "") || "/";
   const isHome = pathname === "/";
   // Stays "false" until the browser-authoritative path lands after mount. The
   // first-paint CSS fallback in globals.css keys off this to hold the homepage

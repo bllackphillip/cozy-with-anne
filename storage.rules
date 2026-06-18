@@ -1,13 +1,32 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Everything in Storage is public-facing imagery: artwork images under
-    // artworks/… and the studio/commission photos under site/… The whole site
-    // reads these with no authentication, so reads are open. Only the owner may
-    // upload, replace, or delete.
-    match /{allPaths=**} {
-      allow read:  if true;
-      allow write: if request.auth != null && request.auth.uid == 'LGJFmfcAEvcdezfn6ZZfLi27Bv42';
+    function isOwner() {
+      return request.auth != null
+        && request.auth.uid == 'LGJFmfcAEvcdezfn6ZZfLi27Bv42';
     }
+
+    // Public-facing imagery: artwork images under artworks/… and the
+    // studio/commission photos under site/… The whole site reads these with no
+    // authentication. Only the owner may upload, replace, or delete.
+    match /artworks/{allPaths=**} {
+      allow read:  if true;
+      allow write: if isOwner();
+    }
+    match /site/{allPaths=**} {
+      allow read:  if true;
+      allow write: if isOwner();
+    }
+
+    // Private customer uploads: commission reference images. NOT public — only
+    // the owner (admin) can read them via the rules; the admin inbox also reaches
+    // them through an unguessable download-token URL. Clients never write here;
+    // the server writes them with the Admin SDK, which bypasses these rules.
+    match /enquiry-attachments/{allPaths=**} {
+      allow read:  if isOwner();
+      allow write: if false;
+    }
+
+    // Everything else is denied by default (no matching allow).
   }
 }
