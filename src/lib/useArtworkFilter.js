@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
 /*
@@ -13,22 +13,61 @@ import { useRouter, usePathname } from "next/navigation";
   We read window.location in the lazy initialisers rather than useSearchParams()
   so no <Suspense> boundary is needed, and there's no hydration mismatch — the
   grid renders its "Loading…" state on first paint regardless of these values.
-  Refs track the latest values so each setter can sync the URL without a stale
-  closure.
+  Route-keyed state keeps the local filter and URL synchronisation aligned.
 */
 function readParam(name) {
   if (typeof window === "undefined") return "";
   return new URLSearchParams(window.location.search).get(name) ?? "";
 }
 
+function readFilterState(pathname) {
+  return {
+    pathname,
+    tag: readParam("tag"),
+    query: readParam("q"),
+  };
+}
+
 export function useArtworkFilter() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const [tag, setTag] = useState(() => readParam("tag"));
-  const [query, setQuery] = useState(() => readParam("q"));
-  const tagRef = useRef(tag);
-  const queryRef = useRef(query);
+  const [filter, setFilter] = useState(() => readFilterState(pathname));
+
+  // A client navigation can reuse this hook instance for the next grid. Reset
+  // immediately when the route identity changes. Do not read window.location
+  // here: Next can update `pathname` one render before the browser location has
+  // discarded the previous grid's query string.
+  let current = filter;
+  if (filter.pathname !== pathname) {
+    current = { pathname, tag: "", query: "" };
+    setFilter(current);
+  }
+
+  const { tag, query } = current;
+
+  // Once navigation has committed, reconcile with the destination URL. The
+  // animation-frame callback both waits out Next's pathname/location timing
+  // window and keeps the state update out of the synchronous effect body.
+  // This restores an explicitly shared destination such as
+  // `/portfolio/sketches?tag=flowers`, while a normal cross-grid navigation
+  // remains clear.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const next = readFilterState(pathname);
+      setFilter((prev) => {
+        if (
+          prev.pathname === next.pathname &&
+          prev.tag === next.tag &&
+          prev.query === next.query
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pathname]);
 
   const sync = useCallback(
     (t, q) => {
@@ -44,37 +83,19 @@ export function useArtworkFilter() {
 
   const changeTag = useCallback(
     (next) => {
-      tagRef.current = next;
-      setTag(next);
-      sync(next, queryRef.current);
+      setFilter({ pathname, tag: next, query });
+      sync(next, query);
     },
-    [sync]
+    [pathname, query, sync]
   );
 
   const changeQuery = useCallback(
     (next) => {
-      queryRef.current = next;
-      setQuery(next);
-      sync(tagRef.current, next);
+      setFilter({ pathname, tag, query: next });
+      sync(tag, next);
     },
-    [sync]
+    [pathname, tag, sync]
   );
-
-  // Re-sync from the URL whenever the route changes. Client navigation between
-  // grids (e.g. the Portfolio dropdown: oil -> sketches) can leave
-  // window.location momentarily stale when the lazy initialisers above run, so
-  // the previous grid's filter would otherwise persist and silently filter the
-  // new grid down to nothing. `pathname` only changes on a real route change,
-  // never when changeTag/changeQuery update the query string, so this never
-  // clobbers a filter the user just applied.
-  useEffect(() => {
-    const t = readParam("tag");
-    const q = readParam("q");
-    tagRef.current = t;
-    queryRef.current = q;
-    setTag(t);
-    setQuery(q);
-  }, [pathname]);
 
   return { tag, query, changeTag, changeQuery };
 }
