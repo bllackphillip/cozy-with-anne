@@ -1,5 +1,6 @@
 import { Geist, Dancing_Script, Fraunces } from "next/font/google";
 import "./globals.css";
+import "flag-icons/css/flag-icons.min.css";
 import Providers from "@/components/Providers";
 import SiteChrome from "@/components/SiteChrome";
 import ExperimentSync from "@/components/ExperimentSync";

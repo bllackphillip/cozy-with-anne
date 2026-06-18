@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
-import { SHIPPING_COUNTRIES, shippingForCountry } from "@/lib/shipping";
+import { shippingForCountry } from "@/lib/shipping";
+import CountrySelect from "@/components/CountrySelect";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -185,19 +186,9 @@ export default function CartDrawer() {
             <label htmlFor="cart-country" className="block text-xs font-medium text-gray-600 mb-1">
               Shipping to
             </label>
-            <select
-              id="cart-country"
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              className="w-full mb-3 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
-            >
-              <option value="">Select your country…</option>
-              {SHIPPING_COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <div className="mb-3">
+              <CountrySelect id="cart-country" value={country} onChange={setCountry} />
+            </div>
 
             <div className="flex items-center justify-between text-sm text-gray-600">
               <span>Subtotal</span>

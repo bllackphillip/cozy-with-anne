@@ -1,3 +1,5 @@
+import { COUNTRY_CODES } from "@/data/countries";
+
 /*
   SHIPPING ZONES — single source of truth for destination -> zone -> rate, shared
   by the cart drawer (to show the real cost BEFORE checkout) and /api/checkout (to
@@ -14,6 +16,10 @@
   could pick a cheaper zone than their destination. By asking for the country in
   the cart we resolve the single correct rate ourselves, send Stripe just that one
   option, and lock the address to the chosen country.
+
+  Every shippable country resolves to a zone: Netherlands -> nl, the European set
+  below -> eu, and everything else falls back to world. (RU and TR are treated as
+  world here; adjust EUROPE_CODES if Anne wants them in the Europe rate.)
 */
 
 export const ZONES = {
@@ -22,62 +28,32 @@ export const ZONES = {
   world: { label: "Rest of world", base: 50, freeOver: null, minDays: 5, maxDays: 15 },
 };
 
-// Countries we ship to (ISO 3166-1 alpha-2), each mapped to a zone. The codes are
-// also what we pass to Stripe's shipping_address_collection.allowed_countries.
-export const SHIPPING_COUNTRIES = [
-  // Netherlands
-  { code: "NL", name: "Netherlands", zone: "nl" },
+// "Rest of Europe" (excludes NL, which is its own zone): EU + EEA + UK +
+// Switzerland + European microstates + the rest of geographic Europe.
+export const EUROPE_CODES = new Set([
+  // EU (minus NL)
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU",
+  "IE", "IT", "LV", "LT", "LU", "MT", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+  // EEA + UK + Switzerland
+  "IS", "LI", "NO", "GB", "CH",
+  // Microstates
+  "AD", "MC", "SM", "VA",
+  // Rest of geographic Europe
+  "AL", "BA", "ME", "MK", "RS", "XK", "MD", "UA", "BY",
+]);
 
-  // Rest of Europe (EU/EEA + UK + Switzerland)
-  { code: "AT", name: "Austria", zone: "eu" },
-  { code: "BE", name: "Belgium", zone: "eu" },
-  { code: "BG", name: "Bulgaria", zone: "eu" },
-  { code: "HR", name: "Croatia", zone: "eu" },
-  { code: "CY", name: "Cyprus", zone: "eu" },
-  { code: "CZ", name: "Czechia", zone: "eu" },
-  { code: "DK", name: "Denmark", zone: "eu" },
-  { code: "EE", name: "Estonia", zone: "eu" },
-  { code: "FI", name: "Finland", zone: "eu" },
-  { code: "FR", name: "France", zone: "eu" },
-  { code: "DE", name: "Germany", zone: "eu" },
-  { code: "GR", name: "Greece", zone: "eu" },
-  { code: "HU", name: "Hungary", zone: "eu" },
-  { code: "IE", name: "Ireland", zone: "eu" },
-  { code: "IT", name: "Italy", zone: "eu" },
-  { code: "LV", name: "Latvia", zone: "eu" },
-  { code: "LT", name: "Lithuania", zone: "eu" },
-  { code: "LU", name: "Luxembourg", zone: "eu" },
-  { code: "MT", name: "Malta", zone: "eu" },
-  { code: "NO", name: "Norway", zone: "eu" },
-  { code: "PL", name: "Poland", zone: "eu" },
-  { code: "PT", name: "Portugal", zone: "eu" },
-  { code: "RO", name: "Romania", zone: "eu" },
-  { code: "SK", name: "Slovakia", zone: "eu" },
-  { code: "SI", name: "Slovenia", zone: "eu" },
-  { code: "ES", name: "Spain", zone: "eu" },
-  { code: "SE", name: "Sweden", zone: "eu" },
-  { code: "CH", name: "Switzerland", zone: "eu" },
-  { code: "GB", name: "United Kingdom", zone: "eu" },
-
-  // Rest of world
-  { code: "AU", name: "Australia", zone: "world" },
-  { code: "CA", name: "Canada", zone: "world" },
-  { code: "JP", name: "Japan", zone: "world" },
-  { code: "NZ", name: "New Zealand", zone: "world" },
-  { code: "US", name: "United States", zone: "world" },
-];
-
-// All shippable country codes — for Stripe's allowed_countries when no specific
-// country has been chosen yet (kept for completeness; checkout locks to one).
-export const ALLOWED_COUNTRIES = SHIPPING_COUNTRIES.map((c) => c.code);
+const KNOWN = new Set(COUNTRY_CODES);
 
 export function zoneForCountry(code) {
-  return SHIPPING_COUNTRIES.find((c) => c.code === code)?.zone ?? null;
+  if (!code || !KNOWN.has(code)) return null;
+  if (code === "NL") return "nl";
+  if (EUROPE_CODES.has(code)) return "eu";
+  return "world";
 }
 
 /*
   Resolve the shipping line for a destination + cart subtotal. Returns null when
-  the country is not one we ship to (so the caller can refuse / prompt). The
+  the country is missing/unrecognised (so the caller can refuse / prompt). The
   free-over-threshold is applied here, once, from the subtotal.
 */
 export function shippingForCountry(code, subtotal) {
