@@ -5,6 +5,8 @@ import AboutSection from "@/components/AboutSection";
 import ScrollReveal from "@/components/ScrollReveal";
 import FeaturedArtworkCarousel from "@/components/FeaturedArtworkCarousel";
 import CommissionsPreview from "@/components/CommissionsPreview";
+import Testimonials from "@/components/Testimonials";
+import SocialFollow from "@/components/SocialFollow";
 import { unstable_cache } from "next/cache";
 import { getImagesFromFolder } from "@/lib/storage";
 import { getFeaturedArtworks, getPortfolioPath } from "@/lib/db";
@@ -112,6 +114,15 @@ export default async function Home() {
 
           <CommissionsPreview bannerUrl={commissionBanner} />
         </section>
+      </ScrollReveal>
+
+      {/* Social proof zone — testimonials (renders only when real quotes exist
+          in src/data/testimonials.js) + social presence, before the footer. */}
+      <ScrollReveal>
+        <Testimonials />
+      </ScrollReveal>
+      <ScrollReveal>
+        <SocialFollow />
       </ScrollReveal>
     </div>
   );
