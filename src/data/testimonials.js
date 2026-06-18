@@ -16,5 +16,26 @@
   }
 */
 export const TESTIMONIALS = [
-  // TODO: paste Anne's real testimonials here.
+  {
+    quote:
+      "I have commissioned an oil painting of my dog that has recently passed away. Anne kept me in the loop with constant updates and the result was simply amazing. I can't wait to frame and hang the painting in the living room.",
+    author: "Helena L.",
+    context: "Commissioned an oil painting",
+    location: "England",
+    source: "via Instagram",
+  },
+  {
+    quote:
+      "Anne knows how much I love my cats, and one day she surprised me with some really funny stickers of them.",
+    author: "Karina S.",
+    context: "Sticker commission, a gift",
+    source: "in person",
+  },
+  {
+    quote:
+      "A close friend surprised me on my birthday with a digital painting of my cat. Apparently she commissioned it from Anne. It brought tears to my eyes and I have it as my screensaver ever since. Thank you!",
+    author: "Alexandra B.",
+    context: "Digital painting commission, a birthday gift",
+    source: "in person",
+  },
 ];
