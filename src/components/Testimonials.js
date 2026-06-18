@@ -11,15 +11,25 @@ import Carousel from "@/components/Carousel";
   driver. McKnight Benevolence + Integrity: real buyers vouching for a real
   seller. Every quote is genuine (see src/data/testimonials.js).
 
-  Layout:
-  - Desktop (>=768px): a single row of equal-height cards.
-  - Mobile (<768px): the shared <Carousel>, opened centred on the middle card
-    (initialIndex = Math.floor(n/2)) with the neighbours peeking in — the same
-    generic, count-agnostic carousel the commissions banners use.
+  Layout (count-driven, so it scales as Anne adds testimonials):
+  - Mobile (<768px): always the shared <Carousel>, opened centred on the middle
+    card with the neighbours peeking in.
+  - Desktop (>=768px): a static single row while the count fits in a row
+    (<= DESKTOP_MAX_PER_ROW); beyond that it becomes the same <Carousel>
+    (about three visible at a time, centred, with arrows + dots).
+  Both carousels open on Math.floor(n/2), so the middle item of the data is the
+  featured/centred one.
 
   Renders NOTHING when there are no real testimonials, so it is always safe to
   ship before content lands. All colours are theme tokens (adapts across palettes).
 */
+
+const DESKTOP_MAX_PER_ROW = 3; // cards that fit one desktop row before it scrolls
+const DESKTOP_GRID_COLS = {
+  1: "md:grid-cols-1",
+  2: "md:grid-cols-2",
+  3: "md:grid-cols-3",
+};
 
 function QuoteMark() {
   return (
@@ -54,7 +64,12 @@ function TestimonialCard({ quote, author, context, location, source }) {
 }
 
 export default function Testimonials() {
-  if (!TESTIMONIALS || TESTIMONIALS.length === 0) return null;
+  const total = TESTIMONIALS.length;
+  if (total === 0) return null;
+
+  const center = Math.floor(total / 2);
+  const desktopOverflows = total > DESKTOP_MAX_PER_ROW;
+  const renderSlide = (t) => <TestimonialCard {...t} />;
 
   return (
     <section className="bg-[var(--color-surface-2)] py-12 sm:py-16 px-6">
@@ -70,23 +85,36 @@ export default function Testimonials() {
         </p>
       </div>
 
-      {/* Desktop: one row of equal-height cards */}
-      <div className="hidden md:grid grid-cols-3 gap-6 max-w-5xl mx-auto items-stretch">
-        {TESTIMONIALS.map((t, i) => (
-          <TestimonialCard key={`${t.author}-${i}`} {...t} />
-        ))}
-      </div>
+      {/* Desktop: static row while it fits; carousel once it overflows */}
+      {desktopOverflows ? (
+        <div className="hidden md:block max-w-6xl mx-auto">
+          <Carousel
+            slides={TESTIMONIALS}
+            initialIndex={center}
+            slideWidthRatio={0.3}
+            slideGapRatio={0.03}
+            renderSlide={renderSlide}
+          />
+        </div>
+      ) : (
+        <div
+          className={`hidden md:grid ${DESKTOP_GRID_COLS[total] || "md:grid-cols-3"} gap-6 max-w-5xl mx-auto items-stretch`}
+        >
+          {TESTIMONIALS.map((t, i) => (
+            <TestimonialCard key={`${t.author}-${i}`} {...t} />
+          ))}
+        </div>
+      )}
 
-      {/* Mobile: swipeable carousel, opened centred on the middle card. The
-          -mx-6 lets it span full width so the neighbours peek past the section
-          padding. initialIndex scales with the number of testimonials. */}
+      {/* Mobile: always a swipeable carousel, opened centred on the middle card.
+          -mx-6 lets it span full width so the neighbours peek past the padding. */}
       <div className="md:hidden -mx-6">
         <Carousel
           slides={TESTIMONIALS}
-          initialIndex={Math.floor(TESTIMONIALS.length / 2)}
+          initialIndex={center}
           mobileWidthRatio={0.82}
           slideGapRatio={0.04}
-          renderSlide={(t) => <TestimonialCard {...t} />}
+          renderSlide={renderSlide}
         />
       </div>
     </section>
