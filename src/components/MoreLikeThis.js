@@ -52,7 +52,7 @@ export default function MoreLikeThis({
   variant,
   type = "original",
   hrefBase,
-  count = 3,
+  count = 5,
 }) {
   const [picks, setPicks] = useState([]);
 
@@ -78,7 +78,7 @@ export default function MoreLikeThis({
       >
         {heading}
       </h2>
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {picks.map((art) => (
           <ArtworkCard
             key={art.id}
@@ -86,8 +86,8 @@ export default function MoreLikeThis({
             type={type}
             href={`${hrefBase}/${art.id}`}
           >
-            <h3 className="text-sm font-semibold text-gray-900">{art.title}</h3>
-            <p className="text-sm text-gray-500">{art.medium}</p>
+            <h3 className="text-xs font-semibold text-gray-900 truncate">{art.title}</h3>
+            <p className="text-xs text-gray-500 truncate">{art.medium}</p>
           </ArtworkCard>
         ))}
       </div>
