@@ -1,5 +1,6 @@
 import { stripe } from "@/lib/stripe";
 import { getArtworksByIds } from "@/lib/db";
+import { shippingForCountry } from "@/lib/shipping";
 import { NextResponse } from "next/server";
 
 /*
@@ -26,7 +27,7 @@ function resolvePrice(artwork, item) {
 
 export async function POST(req) {
   try {
-    const { items } = await req.json();
+    const { items, country } = await req.json();
 
     if (!items?.length) {
       return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
@@ -113,32 +114,37 @@ export async function POST(req) {
     }
 
     /*
-      SHIPPING — charge a real zone rate at checkout (the policy advertises one,
-      so it must actually apply). Subtotal drives the free-over-threshold logic.
-
-      Stripe limitation: Checkout shows these as buyer-selectable radios and
-      cannot bind a rate to the entered country, so a buyer self-selects their
-      zone. Acceptable for the dissertation (test-mode) build; documented in the
-      report. Rates are provisional pending Anne's final figures.
+      SHIPPING — the customer chooses their country in the cart, so we resolve the
+      ONE correct rate here (subtotal drives the free-over-threshold) and send
+      Stripe a single, non-editable shipping option. The address is then locked to
+      that country (allowed_countries below), which removes the old hosted-Checkout
+      flaw where a buyer could self-select a cheaper zone than their destination.
+      Rate logic lives in src/lib/shipping.js, shared with the cart so the cost
+      shown before checkout matches what is charged.
     */
     const subtotal = priced.reduce((sum, i) => sum + i.price * i.quantity, 0);
-    const shippingRate = (amount, name, minDays, maxDays) => ({
-      shipping_rate_data: {
-        type: "fixed_amount",
-        fixed_amount: { amount: Math.round(amount * 100), currency: "eur" },
-        display_name: name,
-        delivery_estimate: {
-          minimum: { unit: "business_day", value: minDays },
-          maximum: { unit: "business_day", value: maxDays },
+    const ship = country ? shippingForCountry(country, subtotal) : null;
+    if (!ship) {
+      return NextResponse.json(
+        {
+          error: "Please choose your shipping destination before checkout.",
+          code: "NO_SHIPPING_COUNTRY",
+        },
+        { status: 400 }
+      );
+    }
+    const shipping_options = [
+      {
+        shipping_rate_data: {
+          type: "fixed_amount",
+          fixed_amount: { amount: Math.round(ship.cost * 100), currency: "eur" },
+          display_name: ship.cost === 0 ? `${ship.label} - Free` : ship.label,
+          delivery_estimate: {
+            minimum: { unit: "business_day", value: ship.minDays },
+            maximum: { unit: "business_day", value: ship.maxDays },
+          },
         },
       },
-    });
-    const nl = subtotal >= 20 ? 0 : 5;
-    const eu = subtotal >= 300 ? 0 : 25;
-    const shipping_options = [
-      shippingRate(nl, nl === 0 ? "Netherlands - Free (over €20)" : "Netherlands", 1, 3),
-      shippingRate(eu, eu === 0 ? "Europe - Free (over €300)" : "Europe", 2, 7),
-      shippingRate(50, "Rest of world", 5, 15),
     ];
 
     const line_items = priced.map((item) => ({
@@ -162,7 +168,9 @@ export async function POST(req) {
       success_url: `${process.env.NEXT_PUBLIC_SITE_URL}/order/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.NEXT_PUBLIC_SITE_URL}/shop`,
       shipping_address_collection: {
-        allowed_countries: ["GB", "IE", "FR", "DE", "NL", "BE", "ES", "IT", "PT", "RO", "US", "CA", "AU"],
+        // Locked to the country chosen in the cart, so the address must match the
+        // zone we priced — the buyer cannot ship somewhere the rate doesn't cover.
+        allowed_countries: [country],
       },
       shipping_options,
       metadata: {

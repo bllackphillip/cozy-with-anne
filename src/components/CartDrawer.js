@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
+import { SHIPPING_COUNTRIES, shippingForCountry } from "@/lib/shipping";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -27,15 +28,25 @@ export default function CartDrawer() {
   } = useCart();
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+  const [country, setCountry] = useState("");
+
+  // The shipping line for the chosen destination, computed from the same module
+  // the server uses — so the cost shown here is exactly what gets charged.
+  const shipping = country ? shippingForCountry(country, cartTotal) : null;
+  const grandTotal = cartTotal + (shipping?.cost ?? 0);
 
   async function handleCheckout() {
+    if (!country) {
+      setCheckoutError("Please choose your shipping destination first.");
+      return;
+    }
     setCheckingOut(true);
     setCheckoutError(null);
     try {
       const res = await fetch("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: cartItems }),
+        body: JSON.stringify({ items: cartItems, country }),
       });
       const data = await res.json();
       if (data.url) {
@@ -165,21 +176,59 @@ export default function CartDrawer() {
           )}
         </div>
 
-        {/* Cart footer — total and checkout button */}
+        {/* Cart footer — destination, totals and checkout button */}
         {cartItems.length > 0 && (
           <div className="border-t border-gray-100 p-4">
-            <div className="flex items-center justify-between mb-4">
+            {/* Shipping destination — picking a country resolves the exact rate
+                (and any free-shipping threshold) before checkout, so there are no
+                surprise fees and Stripe charges the one correct, locked rate. */}
+            <label htmlFor="cart-country" className="block text-xs font-medium text-gray-600 mb-1">
+              Shipping to
+            </label>
+            <select
+              id="cart-country"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              className="w-full mb-3 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+            >
+              <option value="">Select your country…</option>
+              {SHIPPING_COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex items-center justify-between text-sm text-gray-600">
+              <span>Subtotal</span>
+              <span>€{cartTotal.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm text-gray-600 mt-1">
+              <span>Shipping</span>
+              <span>
+                {shipping ? (shipping.cost === 0 ? "Free" : `€${shipping.cost.toFixed(2)}`) : "—"}
+              </span>
+            </div>
+            {shipping && (
+              <p className="mt-1 text-xs text-gray-400">
+                {shipping.label} · {shipping.minDays}-{shipping.maxDays} business days
+                {!shipping.free && shipping.freeOver
+                  ? ` · free over €${shipping.freeOver}`
+                  : ""}
+              </p>
+            )}
+            <div className="flex items-center justify-between mt-3 mb-4 pt-3 border-t border-gray-100">
               <span className="text-sm font-medium text-gray-900">Total</span>
               <span className="text-lg font-semibold text-gray-900">
-                €{cartTotal.toFixed(2)}
+                €{grandTotal.toFixed(2)}
               </span>
             </div>
             <button
               className="w-full py-3 text-sm font-medium site-btn-active disabled:opacity-60"
               onClick={handleCheckout}
-              disabled={checkingOut}
+              disabled={checkingOut || !country}
             >
-              {checkingOut ? "Redirecting…" : "Checkout"}
+              {checkingOut ? "Redirecting…" : country ? "Checkout" : "Select a country to checkout"}
             </button>
             {checkoutError && (
               <p className="mt-2 text-center text-xs text-red-600" role="alert">
