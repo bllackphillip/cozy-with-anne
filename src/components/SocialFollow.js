@@ -24,7 +24,7 @@ export default function SocialFollow() {
         </h2>
         <p className="mt-3 text-gray-600">
           New work, studio days and where I&apos;ll be next - I share it all here.
-          Come follow along.
+          Come follow along, or send me a message any time.
         </p>
 
         <div className="mt-8 flex flex-wrap justify-center gap-4">
