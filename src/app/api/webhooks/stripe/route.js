@@ -8,6 +8,34 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 /*
+  Reconstruct the ordered items from session metadata. Current format is one key
+  per item (`item_count` + `item_0`…`item_{n-1}`) to stay under Stripe's 500-char
+  per-key limit; older sessions used a single `items` JSON blob, still supported.
+*/
+function parseOrderItems(metadata) {
+  if (!metadata) return [];
+  const count = parseInt(metadata.item_count ?? "", 10);
+  if (Number.isInteger(count) && count >= 0) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const raw = metadata[`item_${i}`];
+      if (!raw) continue;
+      try {
+        out.push(JSON.parse(raw));
+      } catch {
+        // skip a malformed entry rather than fail the whole order
+      }
+    }
+    return out;
+  }
+  try {
+    return JSON.parse(metadata.items ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+/*
   STRIPE WEBHOOK
 
   Stripe POSTs events here after a payment. We verify the signature against the
@@ -36,7 +64,7 @@ export async function POST(req) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
-    const items = JSON.parse(session.metadata?.items ?? "[]");
+    const items = parseOrderItems(session.metadata);
     const shipping = session.shipping_details;
 
     const orderData = {

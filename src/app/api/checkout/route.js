@@ -136,16 +136,27 @@ export async function POST(req) {
         allowed_countries: ["GB", "IE", "FR", "DE", "NL", "BE", "ES", "IT", "PT", "RO", "US", "CA", "AU"],
       },
       metadata: {
-        // Server-priced items, so the webhook records the real amounts.
-        items: JSON.stringify(
-          priced.map((i) => ({
-            artworkId: i.artworkId,
-            type: i.type,
-            title: i.title,
-            variantLabel: i.variantLabel,
-            price: i.price,
-            quantity: i.quantity,
-          }))
+        /*
+          One metadata key PER item, not a single JSON blob. Stripe caps each
+          metadata value at 500 chars, which a 4+ item cart overflowed (the whole
+          cart serialised into one `items` key). Per-item keys (`item_0`…) keep
+          each value small; Stripe allows up to 50 keys, so ~49 items fit. The
+          webhook reconstructs from `item_count` + `item_N` (and still falls back
+          to a legacy `items` blob for any older session).
+        */
+        item_count: String(priced.length),
+        ...Object.fromEntries(
+          priced.map((i, idx) => [
+            `item_${idx}`,
+            JSON.stringify({
+              artworkId: i.artworkId,
+              type: i.type,
+              title: i.title,
+              variantLabel: i.variantLabel,
+              price: i.price,
+              quantity: i.quantity,
+            }),
+          ])
         ),
       },
     });
