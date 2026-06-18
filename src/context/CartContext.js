@@ -100,6 +100,8 @@ export function CartProvider({ children }) {
     setCartItems((prev) => {
       const existing = prev.find((item) => item.id === compositeId);
       if (existing) {
+        // Originals are 1-of-1 — never let quantity exceed 1
+        if (type === "original") return prev;
         // Same variant already in cart — increase quantity by 1
         return prev.map((item) =>
           item.id === compositeId
@@ -151,7 +153,9 @@ export function CartProvider({ children }) {
     }
     setCartItems((prev) =>
       prev.map((item) =>
-        item.id === id ? { ...item, quantity: newQuantity } : item
+        item.id === id
+          ? { ...item, quantity: item.type === "original" ? 1 : newQuantity }
+          : item
       )
     );
   }
@@ -177,6 +181,7 @@ export function CartProvider({ children }) {
         removeFromCart,
         updateQuantity,
         clearCart,
+        hydrated,
       }}
     >
       {children}

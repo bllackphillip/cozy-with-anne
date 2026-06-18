@@ -41,7 +41,12 @@ export default function CartDrawer() {
       if (data.url) {
         window.location.href = data.url;
       } else {
-        setCheckoutError("We couldn't start checkout just now. Please try again in a moment.");
+        // The route returns user-safe messages (e.g. an original that just sold);
+        // fall back to a generic line if none was provided.
+        setCheckoutError(
+          data.error ||
+            "We couldn't start checkout just now. Please try again in a moment."
+        );
         setCheckingOut(false);
       }
     } catch {
@@ -120,24 +125,28 @@ export default function CartDrawer() {
                     <p className="text-xs text-gray-400 truncate">{item.variantLabel}</p>
                     <p className="text-sm text-gray-500">€{item.price}</p>
 
-                    {/* Quantity controls */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                        className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:border-gray-400 transition-colors text-sm"
-                      >
-                        -
-                      </button>
-                      <span className="text-sm text-gray-900 w-6 text-center">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                        className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:border-gray-400 transition-colors text-sm"
-                      >
-                        +
-                      </button>
-                    </div>
+                    {/* Quantity controls — originals are 1-of-1, so no stepper */}
+                    {item.type === "original" ? (
+                      <p className="mt-2 text-xs text-gray-400">One of a kind</p>
+                    ) : (
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                          className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:border-gray-400 transition-colors text-sm"
+                        >
+                          -
+                        </button>
+                        <span className="text-sm text-gray-900 w-6 text-center">
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          className="w-7 h-7 rounded-full border border-gray-300 flex items-center justify-center text-gray-600 hover:border-gray-400 transition-colors text-sm"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Remove button */}
