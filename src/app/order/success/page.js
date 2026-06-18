@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { stripe } from "@/lib/stripe";
+import { getCheckoutShippingDetails } from "@/lib/checkoutShipping";
 import ClearCart from "./ClearCart";
 import ConfirmationMessage from "./ConfirmationMessage";
 
@@ -69,6 +70,7 @@ export default async function OrderSuccessPage({ searchParams }) {
     session?.shipping_cost?.amount_total != null
       ? session.shipping_cost.amount_total / 100
       : null;
+  const shipping = getCheckoutShippingDetails(session);
   const total = session ? session.amount_total / 100 : null;
 
   return (
@@ -80,7 +82,7 @@ export default async function OrderSuccessPage({ searchParams }) {
       <ConfirmationMessage firstName={firstName} email={email} />
 
       {/* Order summary — only when we successfully retrieved the session */}
-      {lineItems.length > 0 && (
+      {(lineItems.length > 0 || shipping.address) && (
         <div className="mt-8 text-left border border-[var(--color-border-warm)] rounded-2xl p-5 bg-[var(--color-surface)]">
           <ul className="divide-y divide-[var(--color-border-warm)]">
             {lineItems.map((li) => (
@@ -105,6 +107,33 @@ export default async function OrderSuccessPage({ searchParams }) {
             <div className="flex justify-between pt-3 mt-1 border-t border-[var(--color-border-warm)] text-sm font-semibold text-gray-900">
               <span>Total</span>
               <span>€{total.toFixed(2)}</span>
+            </div>
+          )}
+          {shipping.address && (
+            <div className="pt-4 mt-4 border-t border-[var(--color-border-warm)] text-sm text-gray-600">
+              <p className="font-semibold text-gray-900">Shipping to</p>
+              {shipping.name && <p className="mt-1">{shipping.name}</p>}
+              <address className="not-italic leading-relaxed">
+                {shipping.address.line1 && (
+                  <span className="block">{shipping.address.line1}</span>
+                )}
+                {shipping.address.line2 && (
+                  <span className="block">{shipping.address.line2}</span>
+                )}
+                {(shipping.address.postal_code || shipping.address.city) && (
+                  <span className="block">
+                    {[shipping.address.postal_code, shipping.address.city]
+                      .filter(Boolean)
+                      .join(" ")}
+                  </span>
+                )}
+                {shipping.address.state && (
+                  <span className="block">{shipping.address.state}</span>
+                )}
+                {shipping.address.country && (
+                  <span className="block">{shipping.address.country}</span>
+                )}
+              </address>
             </div>
           )}
         </div>

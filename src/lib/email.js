@@ -41,6 +41,10 @@ const PLUM = "#4A2E2E";
 const ACCENT = "#A06868";
 const BG = "#FAF6F0";
 
+// WhatsApp Business — kept in sync with src/data/social.js (international number,
+// no "+" or leading 0). Used by the order confirmation + newsletter welcome.
+const WHATSAPP_URL = "https://wa.me/31630457419";
+
 function money(n) {
   return `€${Number(n ?? 0).toFixed(2)}`;
 }
@@ -88,17 +92,13 @@ function shippingRow(shippingCost) {
       </tr>`;
 }
 
-function customerHtml({ firstName, items, amountTotal, shippingCost, shippingAddress }) {
+function customerHtml({ firstName, items, amountTotal, shippingCost, shippingAddress, shippingName }) {
   const addr = formatAddress(shippingAddress);
+  const shipToName = shippingName || firstName;
   const addressBlock = addr
     ? `<div style="padding:8px 32px 0;">
-        <p style="color:${PLUM};font-size:14px;line-height:1.6;margin:0 0 4px;">
-          <strong>Shipping to</strong><br/>${addr}
-        </p>
-        <p style="color:${PLUM};font-size:13px;line-height:1.6;opacity:0.85;margin:0;">
-          If any of these details are wrong, please reply to this email or write to
-          <a href="mailto:support@cozywithanne.com" style="color:${ACCENT};">support@cozywithanne.com</a>
-          so I can fix it before it ships.
+        <p style="color:${PLUM};font-size:14px;line-height:1.6;margin:0;">
+          <strong>Shipping to</strong><br/>${escapeHtml(shipToName)}<br/>${addr}
         </p>
       </div>`
     : "";
@@ -123,21 +123,31 @@ function customerHtml({ firstName, items, amountTotal, shippingCost, shippingAdd
         </table>
       </div>
       ${addressBlock}
-      <div style="padding:16px 32px 28px;">
+      <div style="padding:16px 32px 8px;">
         <p style="color:${PLUM};line-height:1.6;font-size:15px;">
           Next, I will pack everything by hand in recycled, plastic-free materials and
-          send it on its way. I will be in touch with shipping details shortly. If you
-          need anything at all, just reply to this email or write to
-          <a href="mailto:support@cozywithanne.com" style="color:${ACCENT};">support@cozywithanne.com</a>.
+          send it on its way. I will be in touch with shipping details shortly.
         </p>
-        <p style="color:${ACCENT};font-size:16px;margin-top:20px;">With love,<br/>Anne</p>
+      </div>
+      <div style="margin:8px 32px 0;padding:16px 0 0;border-top:1px solid #ece3d8;">
+        <p style="color:${PLUM};line-height:1.6;font-size:15px;margin:0 0 8px;">
+          If any of the details are wrong or you have any questions:
+        </p>
+        <ul style="color:${PLUM};line-height:1.9;font-size:15px;margin:0;padding-left:4px;list-style:none;">
+          <li>💬 <a href="${WHATSAPP_URL}" style="color:${ACCENT};">Message me on WhatsApp</a></li>
+          <li>🛟 <a href="mailto:support@cozywithanne.com" style="color:${ACCENT};">support@cozywithanne.com</a> - for help with an order</li>
+        </ul>
+      </div>
+      <div style="padding:12px 32px 28px;">
+        <p style="color:${ACCENT};font-size:16px;margin:0;">With love,<br/>Anne</p>
       </div>
     </div>
   </div>`;
 }
 
-function adminHtml({ customerName, customerEmail, items, amountTotal, shippingCost, shippingAddress, conflict, conflictArtworkIds }) {
+function adminHtml({ customerName, customerEmail, items, amountTotal, shippingCost, shippingAddress, shippingName, conflict, conflictArtworkIds }) {
   const addr = formatAddress(shippingAddress) || "No shipping address on file";
+  const recipient = shippingName ? `${escapeHtml(shippingName)}<br/>` : "";
   // Shown only when the webhook detected that a one-of-a-kind original in this
   // order was already claimed by an earlier order (a rare concurrent double-sale).
   const conflictBanner = conflict
@@ -157,7 +167,7 @@ function adminHtml({ customerName, customerEmail, items, amountTotal, shippingCo
       ${shippingRow(shippingCost)}
       <tr><td style="padding-top:10px;font-weight:bold;">Total</td><td style="padding-top:10px;text-align:right;font-weight:bold;">${money(amountTotal)}</td></tr>
     </table>
-    <p><strong>Ship to:</strong> ${addr}</p>
+    <p><strong>Ship to:</strong><br/>${recipient}${addr}</p>
   </div>`;
 }
 
@@ -168,7 +178,7 @@ export async function sendOrderEmails(order) {
     return;
   }
 
-  const { customerEmail, customerName, items, amountTotal, shippingCost, shippingAddress, conflict, conflictArtworkIds } = order;
+  const { customerEmail, customerName, items, amountTotal, shippingCost, shippingAddress, shippingName, conflict, conflictArtworkIds } = order;
   const firstName = (customerName || "").trim().split(/\s+/)[0] || "there";
   const count = (items ?? []).length;
 
@@ -179,7 +189,7 @@ export async function sendOrderEmails(order) {
         to: customerEmail,
         replyTo: REPLY_TO,
         subject: "Your Cozy with Anne order is confirmed 💌",
-        html: customerHtml({ firstName, items, amountTotal, shippingCost, shippingAddress }),
+        html: customerHtml({ firstName, items, amountTotal, shippingCost, shippingAddress, shippingName }),
       });
     } catch (err) {
       console.error("Customer confirmation email failed:", err);
@@ -192,7 +202,7 @@ export async function sendOrderEmails(order) {
       to: ADMIN_TO,
       replyTo: customerEmail || undefined,
       subject: `${conflict ? "⚠ REVIEW - " : ""}New order: ${money(amountTotal)} (${count} item${count === 1 ? "" : "s"})`,
-      html: adminHtml({ customerName, customerEmail, items, amountTotal, shippingCost, shippingAddress, conflict, conflictArtworkIds }),
+      html: adminHtml({ customerName, customerEmail, items, amountTotal, shippingCost, shippingAddress, shippingName, conflict, conflictArtworkIds }),
     });
   } catch (err) {
     console.error("Admin order alert failed:", err);
@@ -276,10 +286,6 @@ export async function sendEnquiryEmails({ name, email, vision, attachmentUrl }) 
    gets no second welcome). A warm welcome in Anne's voice: what the newsletter is
    for, and the ways to reach her. Same best-effort, RESEND-gated contract as the
    order + enquiry emails. */
-
-// WhatsApp Business — kept in sync with src/data/social.js (international number,
-// no "+" or leading 0).
-const WHATSAPP_URL = "https://wa.me/31630457419";
 
 function newsletterWelcomeHtml() {
   return `

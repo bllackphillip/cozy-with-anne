@@ -2,6 +2,7 @@ import { stripe } from "@/lib/stripe";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 import { sendOrderEmails } from "@/lib/email";
+import { getCheckoutShippingDetails } from "@/lib/checkoutShipping";
 import { NextResponse } from "next/server";
 
 // firebase-admin needs the Node.js runtime (not Edge).
@@ -65,13 +66,14 @@ export async function POST(req) {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const items = parseOrderItems(session.metadata);
-    const shipping = session.shipping_details;
+    const shipping = getCheckoutShippingDetails(session);
 
     const orderData = {
       stripeSessionId: session.id,
       customerEmail: session.customer_details?.email ?? null,
       customerName: session.customer_details?.name ?? null,
-      shippingAddress: shipping?.address ?? null,
+      shippingName: shipping.name,
+      shippingAddress: shipping.address,
       items,
       shippingCost:
         session.shipping_cost?.amount_total != null
