@@ -26,6 +26,41 @@ export default async function OrderSuccessPage({ searchParams }) {
     }
   }
 
+  // A session id that exists but hasn't been paid (unpaid, expired, or someone
+  // probing the URL) must not show a "thank you" or clear the cart. We only treat
+  // a session as a real order when Stripe reports payment_status "paid". A missing
+  // session (transient retrieve failure / no id) keeps the friendly fallback below.
+  if (session && session.payment_status !== "paid") {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-24 text-center">
+        <div className="text-5xl mb-6">🧾</div>
+        <h1
+          className="text-3xl sm:text-4xl text-[var(--color-accent)]"
+          style={{ fontFamily: "var(--font-fraunces)" }}
+        >
+          This order isn&apos;t confirmed yet
+        </h1>
+        <p className="mt-6 text-gray-600 leading-relaxed">
+          We couldn&apos;t confirm a completed payment for this link. If you just
+          paid, give it a moment and refresh. If you think something went wrong,
+          reach out at{" "}
+          <a
+            href="mailto:support@cozywithanne.com"
+            className="text-[var(--color-accent)] hover:underline"
+          >
+            support@cozywithanne.com
+          </a>
+          .
+        </p>
+        <div className="mt-10">
+          <Link href="/shop" className="px-8 py-3 text-sm font-medium site-btn inline-block">
+            Back to Shop
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const firstName = session?.customer_details?.name?.split(" ")[0];
   const email = session?.customer_details?.email;
   const lineItems = session?.line_items?.data ?? [];
@@ -83,8 +118,8 @@ export default async function OrderSuccessPage({ searchParams }) {
 
       <p className="mt-6 text-gray-500 text-sm">
         Questions? Reach out at{" "}
-        <a href="mailto:cozywithanne@gmail.com" className="text-[var(--color-accent)] hover:underline">
-          cozywithanne@gmail.com
+        <a href="mailto:support@cozywithanne.com" className="text-[var(--color-accent)] hover:underline">
+          support@cozywithanne.com
         </a>
       </p>
       <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">

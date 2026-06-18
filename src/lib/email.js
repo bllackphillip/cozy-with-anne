@@ -15,7 +15,7 @@ import { Resend } from "resend";
                        Defaults to Resend's shared "onboarding@resend.dev" so it
                        works on the dissertation site before a domain is verified.
     ORDER_EMAIL_ADMIN  where Anne's new-order alert goes. Defaults to
-                       cozywithanne@gmail.com.
+                       support@cozywithanne.com.
     ORDER_EMAIL_REPLY_TO  optional. Where a customer's reply to the confirmation
                        goes (e.g. a Gmail you watch now, support@cozywithanne.com
                        at launch). If unset, replies go to ORDER_EMAIL_FROM.
@@ -33,7 +33,7 @@ function getClient() {
 }
 
 const FROM = process.env.ORDER_EMAIL_FROM || "Cozy with Anne <onboarding@resend.dev>";
-const ADMIN_TO = process.env.ORDER_EMAIL_ADMIN || "cozywithanne@gmail.com";
+const ADMIN_TO = process.env.ORDER_EMAIL_ADMIN || "support@cozywithanne.com";
 const REPLY_TO = process.env.ORDER_EMAIL_REPLY_TO || undefined;
 
 // Brand palette (literal hex; email clients can't read CSS variables).

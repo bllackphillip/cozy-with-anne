@@ -31,7 +31,7 @@ export default function CommissionForm() {
       setError(
         err.message && err.message !== "Request failed"
           ? err.message
-          : "Something went wrong sending your enquiry. Please try again, or email cozywithanne@gmail.com."
+          : "Something went wrong sending your enquiry. Please try again, or email support@cozywithanne.com."
       );
     } finally {
       setSubmitting(false);
