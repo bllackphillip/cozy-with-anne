@@ -68,8 +68,8 @@ export default async function Home() {
       </section>
       {/* Sentinel: moved OUTSIDE the section so it sits at the exact same vertical
           position as the hero's bottom border (not 4px above it inside pb-1 padding).
-          IntersectionObserver in Header.js watches this with rootMargin: "-64px" so it
-          fires precisely when the hero/featured boundary reaches the header's bottom edge. */}
+          Header.js reads this element's position (getBoundingClientRect) on scroll to
+          decide when the hero/featured boundary reaches the header's bottom edge. */}
       <div id="hero-end" />
 
       {/* About preview section */}

@@ -29,16 +29,6 @@ import { useCart } from "@/context/CartContext";
       at exactly scrollY=64 the hero fills the header area only at the top edge,
       and rapid scrolling could still expose edge cases.
 
-  // const HEADER_HEIGHT = 64;
-  // const [heroCoversHeader, setHeroCoversHeader] = useState(false);
-  // useEffect(() => {
-  //   if (!isHome) return;
-  //   const handleScroll = () => setHeroCoversHeader(window.scrollY >= HEADER_HEIGHT);
-  //   setHeroCoversHeader(window.scrollY >= HEADER_HEIGHT);
-  //   window.addEventListener("scroll", handleScroll, { passive: true });
-  //   return () => window.removeEventListener("scroll", handleScroll);
-  // }, [isHome]);
-
   Final approach (below): extend the hero 64px upward behind the header (-mt-16 in
   page.js) so the floral texture aligns. The header is transparent while it sits
   over the hero and turns solid only once the user scrolls past it.
@@ -101,14 +91,18 @@ export default function Header() {
     setOpenDropdown(null);
     setMobileMenuOpen(false);
     setMobileExpanded(null);
+    setPastHero(false); // start each route transparent; the effect recomputes on home
   }
 
   /*
-    Header is solid only when the user has scrolled (window.scrollY > 0) AND the
-    #hero-end sentinel has reached the header line. The scrollY guard makes the top
-    of the page always transparent, so a fresh load / refresh can never get stuck
-    solid from a mid-hydration layout measurement (see the note at the top of the
-    file). Recomputes (rAF-throttled) on scroll/resize/load.
+    Derive "past hero": the header is solid only when the user has scrolled
+    (window.scrollY > 0) AND the #hero-end sentinel has reached the header line.
+    The scrollY gate keeps the very top of the page transparent no matter what a
+    layout measurement returns. We recompute (rAF-throttled) on EVERY event that
+    can change the geometry or restore a scroll position: scroll, resize, image
+    load, web-font load (document.fonts.ready) and back/forward (bfcache) restore
+    (pageshow). That last pair is why the bug kept "coming back": a bfcache restore
+    or a late font swap could leave a stale value with no event to recompute it.
   */
   useEffect(() => {
     if (!isHome) return;
@@ -117,27 +111,34 @@ export default function Header() {
     if (!sentinel) return;
 
     let frame = 0;
+    let cancelled = false;
     const compute = () => {
+      if (cancelled) return;
       const height = headerRef.current ? headerRef.current.offsetHeight : 64;
-      const scrolled = window.scrollY > 0;
-      setPastHero(scrolled && sentinel.getBoundingClientRect().top <= height);
+      setPastHero(window.scrollY > 0 && sentinel.getBoundingClientRect().top <= height);
     };
     const schedule = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(compute);
     };
 
-    compute(); // top of page (scrollY 0) → transparent, regardless of layout state
+    schedule(); // initial — top of page (scrollY 0) resolves to transparent
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
-    // A restored scroll position (refresh while scrolled) lands after first paint.
     window.addEventListener("load", schedule);
+    window.addEventListener("pageshow", schedule); // back/forward (bfcache) restore
+    // Web fonts can change the hero height after first paint; recompute when ready.
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => { if (!cancelled) schedule(); }).catch(() => {});
+    }
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(frame);
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("load", schedule);
+      window.removeEventListener("pageshow", schedule);
     };
   }, [isHome]);
 
