@@ -11,17 +11,12 @@ export default function Footer() {
         {/* grid-cols-1 md:grid-cols-3 = 1 column on mobile, 3 on medium+ screens */}
         {/* gap-8 = spacing between grid items */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Brand Section */}
+          {/* Policies */}
           <div>
-            <h3 className="text-lg font-semibold text-[#FAF6F0]">
-              Cozy with Anne
-            </h3>
-            <p className="mt-2 text-sm text-[#E8D8D0]">
-              Original oil paintings, digital art, prints & stickers made with
-              love.
-            </p>
-            {/* Policy links */}
-            <div className="mt-4 flex flex-col gap-2 items-start">
+            <h4 className="text-sm font-semibold text-[#FAF6F0] uppercase tracking-wider">
+              Policies
+            </h4>
+            <div className="mt-2 flex flex-col gap-2 items-start">
               <Link
                 href="/policies/shipping"
                 className="text-sm text-[#E8D8D0] hover:text-[#FAF6F0] transition-colors"

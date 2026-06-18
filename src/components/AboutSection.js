@@ -81,7 +81,7 @@ export default function AboutSection({ images, compact = false }) {
           </p>
           <Link
             href="/about"
-            className="mt-8 inline-block px-8 py-3 text-sm font-medium site-btn"
+            className="mt-8 inline-block px-8 py-3 text-sm font-medium site-btn-active"
           >
             Read more about me
           </Link>

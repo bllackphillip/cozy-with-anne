@@ -93,7 +93,7 @@ export default async function Home() {
             <div className="text-center mt-2 pb-4">
               <Link
                 href="/portfolio"
-                className="inline-block px-8 py-3 text-sm font-medium site-btn"
+                className="inline-block px-8 py-3 text-sm font-medium site-btn-active"
               >
                 Check out my Portfolio
               </Link>
