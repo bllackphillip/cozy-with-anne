@@ -39,10 +39,14 @@ import { useCart } from "@/context/CartContext";
   //   return () => window.removeEventListener("scroll", handleScroll);
   // }, [isHome]);
 
-  Final approach (below): extend the hero section 64px upward behind the header
-  using -mt-16 in page.js. Since both use background-attachment: fixed, the texture
-  aligns perfectly. The header is always transparent on the homepage — no scroll
-  listener, no threshold, no edge cases.
+  Final approach (below): extend the hero 64px upward behind the header (-mt-16 in
+  page.js) so the floral texture aligns; the header is transparent while the hero
+  is in view and turns solid once scrolled past it. "Past hero" is computed
+  DETERMINISTICALLY from the #hero-end sentinel's live position on mount + scroll +
+  resize + load. We do NOT use an IntersectionObserver: its async initial callback
+  raced with layout on a hard load (firing before the hero finished laying out, when
+  the sentinel was momentarily near the top) and intermittently stuck the header in
+  its solid state at the top of the page.
 */
 
 const navLinks = [
@@ -91,10 +95,12 @@ export default function Header() {
   }
 
   /*
-    IntersectionObserver watches a tiny sentinel div placed at the bottom of the
-    hero section in page.js. When the sentinel scrolls out of view (user has
-    scrolled past the hero), isIntersecting becomes false and we set pastHero=true,
-    which adds the border. Scrolling back up reverses it.
+    Compute "past the hero" from the #hero-end sentinel's live viewport position:
+    the header turns solid once the sentinel reaches the header line (its top is
+    at or above the header's bottom edge). This runs synchronously on mount, so a
+    hard load resolves to the correct state immediately, and re-runs (rAF-throttled)
+    on scroll/resize/load. No IntersectionObserver — see the note at the top of the
+    file for why its async first fire made this bug intermittent.
   */
   useEffect(() => {
     if (!isHome) return;
@@ -102,24 +108,28 @@ export default function Header() {
     const sentinel = document.getElementById("hero-end");
     if (!sentinel) return;
 
-    // Read the actual rendered header height instead of hardcoding 64px.
-    const height = headerRef.current ? headerRef.current.offsetHeight : 64;
+    let frame = 0;
+    const compute = () => {
+      const height = headerRef.current ? headerRef.current.offsetHeight : 64;
+      setPastHero(sentinel.getBoundingClientRect().top <= height);
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(compute);
+    };
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        // We're "past the hero" only when the sentinel has scrolled UP to the
-        // header line (top ≤ header height). Using only `!isIntersecting` was
-        // the bug: on a hard load of a tall hero the sentinel starts BELOW the
-        // fold, which is also "not intersecting", so the header wrongly rendered
-        // solid until a client-side nav. boundingClientRect.top is the sentinel's
-        // real position, so below-the-fold (large positive top) stays transparent.
-        setPastHero(entry.boundingClientRect.top <= height);
-      },
-      { threshold: 0, rootMargin: `-${height}px 0px 0px 0px` },
-    );
+    compute(); // deterministic initial value, no async race
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    // Late-loading images/fonts can shift the sentinel after first paint.
+    window.addEventListener("load", schedule);
 
-    observer.observe(sentinel);
-    return () => observer.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("load", schedule);
+    };
   }, [isHome]);
 
   // Close desktop dropdown when clicking outside the header
