@@ -40,13 +40,22 @@ import { useCart } from "@/context/CartContext";
   // }, [isHome]);
 
   Final approach (below): extend the hero 64px upward behind the header (-mt-16 in
-  page.js) so the floral texture aligns; the header is transparent while the hero
-  is in view and turns solid once scrolled past it. "Past hero" is computed
-  DETERMINISTICALLY from the #hero-end sentinel's live position on mount + scroll +
-  resize + load. We do NOT use an IntersectionObserver: its async initial callback
-  raced with layout on a hard load (firing before the hero finished laying out, when
-  the sentinel was momentarily near the top) and intermittently stuck the header in
-  its solid state at the top of the page.
+  page.js) so the floral texture aligns. The header is transparent while it sits
+  over the hero and turns solid only once the user scrolls past it.
+
+  "Past hero" = the user has actually scrolled (window.scrollY > 0) AND the
+  #hero-end sentinel has reached the header line. The scrollY guard is load-bearing:
+  at the very top of the page scrollY is 0, so the header is ALWAYS transparent
+  there, no matter what a transient layout measurement returns mid-hydration.
+
+  Why this bug was production- and hard-load-only: on a fresh load / refresh the
+  effect can run before late assets (the logo image, web fonts) finish settling the
+  hero's height, so a position-only check momentarily saw the sentinel near the top,
+  flipped the header solid, and it stuck. On localhost those assets are instant, and
+  a client-side nav back to Home re-runs the effect after layout is already settled,
+  so neither path ever exposed it. Gating on scrollY removes the dependence on
+  load-time layout entirely. (An earlier IntersectionObserver failed for the same
+  root reason: its async first fire raced the same unsettled layout.)
 */
 
 const navLinks = [
@@ -95,12 +104,11 @@ export default function Header() {
   }
 
   /*
-    Compute "past the hero" from the #hero-end sentinel's live viewport position:
-    the header turns solid once the sentinel reaches the header line (its top is
-    at or above the header's bottom edge). This runs synchronously on mount, so a
-    hard load resolves to the correct state immediately, and re-runs (rAF-throttled)
-    on scroll/resize/load. No IntersectionObserver — see the note at the top of the
-    file for why its async first fire made this bug intermittent.
+    Header is solid only when the user has scrolled (window.scrollY > 0) AND the
+    #hero-end sentinel has reached the header line. The scrollY guard makes the top
+    of the page always transparent, so a fresh load / refresh can never get stuck
+    solid from a mid-hydration layout measurement (see the note at the top of the
+    file). Recomputes (rAF-throttled) on scroll/resize/load.
   */
   useEffect(() => {
     if (!isHome) return;
@@ -111,17 +119,18 @@ export default function Header() {
     let frame = 0;
     const compute = () => {
       const height = headerRef.current ? headerRef.current.offsetHeight : 64;
-      setPastHero(sentinel.getBoundingClientRect().top <= height);
+      const scrolled = window.scrollY > 0;
+      setPastHero(scrolled && sentinel.getBoundingClientRect().top <= height);
     };
     const schedule = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(compute);
     };
 
-    compute(); // deterministic initial value, no async race
+    compute(); // top of page (scrollY 0) → transparent, regardless of layout state
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
-    // Late-loading images/fonts can shift the sentinel after first paint.
+    // A restored scroll position (refresh while scrolled) lands after first paint.
     window.addEventListener("load", schedule);
 
     return () => {
