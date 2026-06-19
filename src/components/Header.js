@@ -229,26 +229,17 @@ export default function Header() {
           background-attachment: fixed is set once and never toggled, so the
           GPU compositing layer is pre-created and never causes a jump. */}
       <div
-        className={`site-header-bg absolute inset-0 floral-top ${isTransparent ? "opacity-0 pointer-events-none" : "border-b border-[var(--color-border)]"}`}
+        className={`site-header-bg absolute inset-0 floral-top ${isTransparent ? "opacity-0 pointer-events-none" : ""}`}
         aria-hidden="true"
       />
 
       <nav className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
 
-          {/* Logo */}
-          <Link
-            href="/"
-            className={`site-header-logo text-2xl font-bold text-[#FAF6F0] transition-opacity ${isTransparent ? "opacity-0 pointer-events-none select-none" : "opacity-100"}`}
-            style={{
-              fontFamily: "var(--font-dancing)",
-              textShadow: "0 2px 12px rgba(53,41,41,1), 0 1px 4px rgba(53,41,41,1), 0 0 8px rgba(53,41,41,1)",
-            }}
-            tabIndex={isTransparent ? -1 : undefined}
-            aria-hidden={isTransparent ? "true" : undefined}
-          >
-            cozy with anne
-          </Link>
+          {/* Logo text intentionally removed (the hero already shows the wordmark).
+              An empty spacer keeps the nav right-aligned via justify-between and
+              avoids the old transparent/solid logo flash on homepage load. */}
+          <div aria-hidden="true" />
 
           {/* Desktop Navigation + Cart Icon */}
           <div className="hidden md:flex items-center gap-6">
