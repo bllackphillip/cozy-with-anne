@@ -151,6 +151,27 @@ body:has(#hero-end) .site-header-home-link {
   }
 }
 
+/* ImageZoom chooses its instruction from input capability rather than width:
+   touch/hybrid devices receive touch guidance and precise pointers receive
+   the existing hover guidance. */
+.zoom-hint-fine {
+  display: none;
+}
+
+.zoom-hint-touch {
+  display: inline;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .zoom-hint-fine {
+    display: inline;
+  }
+
+  .zoom-hint-touch {
+    display: none;
+  }
+}
+
 .site-btn-active {
   background-color: var(--color-accent);
   color: var(--color-bg);

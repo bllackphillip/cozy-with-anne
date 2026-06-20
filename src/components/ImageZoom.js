@@ -1,100 +1,299 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+
+const ZOOM_LEVEL = 2.5;
+const DESKTOP_LENS_SIZE = 200;
+const TOUCH_LENS_MAX_SIZE = 168;
+const TOUCH_LENS_MIN_SIZE = 132;
+const TAP_MOVE_TOLERANCE = 10;
 
 /*
   MAGNIFYING GLASS COMPONENT
 
-  The key fix vs the naive version: `object-cover` scales the image so the
-  shorter dimension fills the container, cropping the longer one. If we
-  naively set backgroundSize to containerWidth × zoom, the lens image gets
-  stretched/squished to match the container's aspect ratio rather than the
-  image's own ratio — causing the distortion and wrong-area problems.
+  `object-cover` may crop the displayed image. The lens therefore reproduces
+  the rendered image dimensions and crop offset instead of stretching the
+  source to the container's aspect ratio.
 
-  Correct approach:
-  1. Read img.naturalWidth / naturalHeight to get the real image dimensions.
-  2. Compute the object-cover scale: max(containerW / natW, containerH / natH).
-  3. The rendered image is natW×scale by natH×scale, centred in the container,
-     with (renderedW - containerW)/2 cropped on each side.
-  4. Set backgroundSize to the rendered image × zoomLevel (preserves aspect ratio).
-  5. Offset bgPosition by the crop amount so the lens shows the correct region.
+  Mouse users retain hover-to-zoom. Touch users first tap to enter an explicit
+  detail mode, then drag the lens. Keeping activation and dragging as separate
+  gestures lets the first gesture remain available for ordinary page scrolling.
 */
 
-export default function ImageZoom({ src, alt, className = "" }) {
+export default function ImageZoom(props) {
+  return <ImageZoomInteraction key={props.src || "empty-image"} {...props} />;
+}
+
+function ImageZoomInteraction({ src, alt, className = "" }) {
   const [showLens, setShowLens] = useState(false);
-  const [lensPosition, setLensPosition] = useState({ x: 0, y: 0 });
-  const [backgroundPosition, setBackgroundPosition] = useState("0% 0%");
-  const [backgroundSize, setBackgroundSize] = useState("0px 0px");
+  const [touchZoomActive, setTouchZoomActive] = useState(false);
+  const [lensStyle, setLensStyle] = useState({
+    size: DESKTOP_LENS_SIZE,
+    x: 0,
+    y: 0,
+    backgroundPosition: "0px 0px",
+    backgroundSize: "0px 0px",
+  });
+
+  const rootRef = useRef(null);
+  const surfaceRef = useRef(null);
   const imgRef = useRef(null);
+  const touchCandidate = useRef(null);
+  const activePointerId = useRef(null);
+  const pendingLensMove = useRef(null);
+  const moveFrame = useRef(null);
 
-  const zoomLevel = 2.5;
-  const lensSize = 200;
-  const lensRadius = lensSize / 2;
+  useEffect(() => {
+    if (!touchZoomActive) return;
 
-  function handleMouseMove(e) {
+    function handleOutsidePointerDown(e) {
+      if (rootRef.current?.contains(e.target)) return;
+      setTouchZoomActive(false);
+      setShowLens(false);
+      touchCandidate.current = null;
+      activePointerId.current = null;
+    }
+
+    document.addEventListener("pointerdown", handleOutsidePointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointerDown, true);
+    };
+  }, [touchZoomActive]);
+
+  useEffect(() => () => {
+    if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
+  }, []);
+
+  function updateLens(clientX, clientY, isTouch) {
     const img = imgRef.current;
-    if (!img || !img.naturalWidth) return;
-    if (!showLens) setShowLens(true);
+    const surface = surfaceRef.current;
+    if (!img || !surface || !img.naturalWidth) return;
 
-    const rect = img.getBoundingClientRect();
-    const cursorX = e.clientX - rect.left;
-    const cursorY = e.clientY - rect.top;
+    const rect = surface.getBoundingClientRect();
+    const sampleX = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    const sampleY = Math.max(0, Math.min(rect.height, clientY - rect.top));
+    const lensSize = isTouch
+      ? Math.min(
+          TOUCH_LENS_MAX_SIZE,
+          Math.max(TOUCH_LENS_MIN_SIZE, rect.width * 0.44)
+        )
+      : DESKTOP_LENS_SIZE;
+    const lensRadius = lensSize / 2;
 
-    setLensPosition({ x: cursorX, y: cursorY });
+    let lensX = sampleX;
+    let lensY = sampleY;
 
-    // Replicate the object-cover scale factor
-    const scale = Math.max(rect.width / img.naturalWidth, rect.height / img.naturalHeight);
+    if (isTouch) {
+      // Keep the enlarged detail clear of the fingertip. Prefer showing it
+      // above the touched point, but move it below near the image's top edge.
+      // The sampled point remains the exact location under the finger.
+      const edgeGap = 8;
+      const fingerGap = 24;
+      const minX = lensRadius + edgeGap;
+      const maxX = rect.width - lensRadius - edgeGap;
+      const minY = lensRadius + edgeGap;
+      const maxY = rect.height - lensRadius - edgeGap;
+      const aboveFinger = sampleY - lensRadius - fingerGap;
+      const belowFinger = sampleY + lensRadius + fingerGap;
+
+      lensX = Math.max(minX, Math.min(maxX, sampleX));
+      lensY = aboveFinger >= minY
+        ? aboveFinger
+        : Math.min(maxY, belowFinger);
+    }
+
+    const scale = Math.max(
+      rect.width / img.naturalWidth,
+      rect.height / img.naturalHeight
+    );
     const renderedW = img.naturalWidth * scale;
     const renderedH = img.naturalHeight * scale;
-
-    // How far the rendered image extends beyond the container on each axis
     const cropX = (renderedW - rect.width) / 2;
     const cropY = (renderedH - rect.height) / 2;
 
-    // Background size matches the rendered (object-cover) image × zoom
-    setBackgroundSize(`${renderedW * zoomLevel}px ${renderedH * zoomLevel}px`);
+    // Centre the touched/hovered source point in the lens, even when the touch
+    // lens is visually offset so that the user's finger does not cover it.
+    const bgX = lensRadius - (sampleX + cropX) * ZOOM_LEVEL;
+    const bgY = lensRadius - (sampleY + cropY) * ZOOM_LEVEL;
 
-    // Place the cursor's rendered-image point at the centre of the lens
-    const bgX = lensRadius - (cursorX + cropX) * zoomLevel;
-    const bgY = lensRadius - (cursorY + cropY) * zoomLevel;
-    setBackgroundPosition(`${bgX}px ${bgY}px`);
+    setLensStyle({
+      size: lensSize,
+      x: lensX,
+      y: lensY,
+      backgroundPosition: `${bgX}px ${bgY}px`,
+      backgroundSize: `${renderedW * ZOOM_LEVEL}px ${renderedH * ZOOM_LEVEL}px`,
+    });
+  }
+
+  function queueLensUpdate(clientX, clientY, isTouch) {
+    pendingLensMove.current = { clientX, clientY, isTouch };
+    if (moveFrame.current !== null) return;
+
+    moveFrame.current = requestAnimationFrame(() => {
+      moveFrame.current = null;
+      const pending = pendingLensMove.current;
+      pendingLensMove.current = null;
+      if (pending) updateLens(pending.clientX, pending.clientY, pending.isTouch);
+    });
+  }
+
+  function handlePointerEnter(e) {
+    if (e.pointerType !== "mouse" || touchZoomActive) return;
+    setShowLens(true);
+    queueLensUpdate(e.clientX, e.clientY, false);
+  }
+
+  function handlePointerLeave(e) {
+    if (e.pointerType === "mouse" && !touchZoomActive) setShowLens(false);
+  }
+
+  function handlePointerDown(e) {
+    if (e.pointerType === "mouse" || !src) return;
+
+    if (touchZoomActive) {
+      if (activePointerId.current !== null) return;
+      activePointerId.current = e.pointerId;
+      setShowLens(true);
+      queueLensUpdate(e.clientX, e.clientY, true);
+      return;
+    }
+
+    // The first gesture remains scroll-friendly. Zoom activates only after it
+    // finishes as a clean tap; a drag here continues to scroll the page.
+    touchCandidate.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+    };
+  }
+
+  function handlePointerMove(e) {
+    if (e.pointerType === "mouse") {
+      if (touchZoomActive) return;
+      if (!showLens) setShowLens(true);
+      queueLensUpdate(e.clientX, e.clientY, false);
+      return;
+    }
+
+    if (touchZoomActive) {
+      if (activePointerId.current !== e.pointerId) return;
+      queueLensUpdate(e.clientX, e.clientY, true);
+      return;
+    }
+
+    const candidate = touchCandidate.current;
+    if (!candidate || candidate.pointerId !== e.pointerId || candidate.moved) return;
+
+    if (
+      Math.hypot(
+        e.clientX - candidate.startX,
+        e.clientY - candidate.startY
+      ) >= TAP_MOVE_TOLERANCE
+    ) {
+      candidate.moved = true;
+    }
+  }
+
+  function handlePointerUp(e) {
+    if (e.pointerType === "mouse") return;
+
+    if (touchZoomActive) {
+      if (activePointerId.current !== e.pointerId) return;
+      queueLensUpdate(e.clientX, e.clientY, true);
+      activePointerId.current = null;
+      return;
+    }
+
+    const candidate = touchCandidate.current;
+    if (!candidate || candidate.pointerId !== e.pointerId) return;
+    touchCandidate.current = null;
+
+    if (candidate.moved) return;
+
+    setTouchZoomActive(true);
+    setShowLens(true);
+    queueLensUpdate(e.clientX, e.clientY, true);
+  }
+
+  function handlePointerCancel(e) {
+    if (touchCandidate.current?.pointerId === e.pointerId) {
+      touchCandidate.current = null;
+    }
+    if (activePointerId.current === e.pointerId) {
+      activePointerId.current = null;
+    }
   }
 
   return (
-    <div
-      className={`relative overflow-hidden cursor-crosshair bg-gray-100 ${className}`}
-      onMouseEnter={() => setShowLens(true)}
-      onMouseLeave={() => setShowLens(false)}
-      onMouseMove={handleMouseMove}
-    >
-      {src && (
-        <Image
-          ref={imgRef}
-          src={src}
-          alt={alt}
-          fill
-          sizes="(max-width: 1024px) 100vw, 50vw"
-          className="object-cover"
-        />
-      )}
+    <div ref={rootRef}>
+      <p className="mb-3 text-sm text-[var(--color-accent)]">
+        <span aria-hidden="true">&searr;&nbsp;</span>
+        <span className="zoom-hint-fine">
+          Come a little closer &mdash; hover to wander through the brushstrokes.
+        </span>
+        <span className="zoom-hint-touch">
+          Come a little closer &mdash; tap the artwork, then drag to explore its details.
+        </span>
+      </p>
 
-      {src && showLens && (
-        <div
-          className="absolute pointer-events-none rounded-full border-2 border-white/70 shadow-lg"
-          style={{
-            width: `${lensSize}px`,
-            height: `${lensSize}px`,
-            transform: "translate(-50%, -50%)",
-            left: lensPosition.x,
-            top: lensPosition.y,
-            backgroundImage: `url(${src})`,
-            backgroundSize: backgroundSize,
-            backgroundPosition: backgroundPosition,
-            backgroundRepeat: "no-repeat",
-          }}
-        />
-      )}
+      <div
+        ref={surfaceRef}
+        className={`relative overflow-hidden cursor-crosshair bg-gray-100 select-none ${className}`}
+        style={{
+          touchAction: touchZoomActive ? "none" : "pan-y pinch-zoom",
+          WebkitTouchCallout: touchZoomActive ? "none" : "default",
+        }}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+        onContextMenu={(e) => {
+          if (touchZoomActive) e.preventDefault();
+        }}
+      >
+        {src && (
+          <Image
+            ref={imgRef}
+            src={src}
+            alt={alt}
+            fill
+            sizes="(max-width: 1024px) 100vw, 50vw"
+            className="object-cover pointer-events-none"
+            draggable={false}
+          />
+        )}
+
+        {src && touchZoomActive && (
+          <div
+            className="absolute z-20 top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/65 px-3 py-1.5 text-xs text-white shadow-md pointer-events-none"
+            aria-live="polite"
+          >
+            Detail view &middot; drag to wander &middot; tap outside to close
+          </div>
+        )}
+
+        {src && showLens && (
+          <div
+            className="absolute z-10 pointer-events-none rounded-full border-2 border-white/70 shadow-lg"
+            aria-hidden="true"
+            style={{
+              width: `${lensStyle.size}px`,
+              height: `${lensStyle.size}px`,
+              transform: "translate(-50%, -50%)",
+              left: lensStyle.x,
+              top: lensStyle.y,
+              backgroundImage: `url(${src})`,
+              backgroundSize: lensStyle.backgroundSize,
+              backgroundPosition: lensStyle.backgroundPosition,
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
