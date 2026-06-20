@@ -81,21 +81,6 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
       : DESKTOP_LENS_SIZE;
     const lensRadius = lensSize / 2;
 
-    let lensX = sampleX;
-    let lensY = sampleY;
-
-    if (isTouch) {
-      // Follow the touched point until the lens reaches an artwork edge, then
-      // keep the full circle inside the image while sampling continues beneath
-      // the finger. The small-image fallback keeps the lens centred.
-      lensX = rect.width <= lensSize
-        ? rect.width / 2
-        : Math.max(lensRadius, Math.min(rect.width - lensRadius, sampleX));
-      lensY = rect.height <= lensSize
-        ? rect.height / 2
-        : Math.max(lensRadius, Math.min(rect.height - lensRadius, sampleY));
-    }
-
     const scale = Math.max(
       rect.width / img.naturalWidth,
       rect.height / img.naturalHeight
@@ -111,8 +96,8 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
 
     setLensStyle({
       size: lensSize,
-      x: lensX,
-      y: lensY,
+      x: sampleX,
+      y: sampleY,
       backgroundPosition: `${bgX}px ${bgY}px`,
       backgroundSize: `${renderedW * ZOOM_LEVEL}px ${renderedH * ZOOM_LEVEL}px`,
     });
