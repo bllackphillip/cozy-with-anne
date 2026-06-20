@@ -2,6 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 
+const DRAG_THRESHOLD = 5;
+const FLICK_VELOCITY = 0.35;
+const SNAP_DURATION = 420;
+const SNAP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
 function ChevronLeft() {
   return (
     <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -28,6 +33,21 @@ function computeLayout(cW, idx, slideWidthRatio, slideGapRatio, mobileWidthRatio
   return { slideW, gap, tx: peek - idx * (slideW + gap) };
 }
 
+function clampIndex(index, total) {
+  return Math.max(0, Math.min(total - 1, index));
+}
+
+function renderedTranslateX(element) {
+  const transform = window.getComputedStyle(element).transform;
+  if (!transform || transform === "none") return 0;
+
+  const values = transform
+    .slice(transform.indexOf("(") + 1, transform.lastIndexOf(")"))
+    .split(",")
+    .map(Number);
+  return transform.startsWith("matrix3d") ? values[12] : values[4];
+}
+
 export default function Carousel({
   slides,
   initialIndex    = 0,
@@ -48,15 +68,19 @@ export default function Carousel({
   const containerRef = useRef(null);
   const trackRef     = useRef(null);
   const firstLayout  = useRef(true);
-  const dragStartX   = useRef(null);
   const wasDragged   = useRef(false);
-  const touchStartX  = useRef(null);
+  const pointerId    = useRef(null);
+  const dragStartX   = useRef(0);
+  const dragOriginX  = useRef(0);
+  const dragStartAt  = useRef(0);
+  const pendingX     = useRef(null);
+  const moveFrame    = useRef(null);
 
-  // Always-fresh refs so window handlers never read stale closure values
+  // Always-fresh refs so pointer handlers never read stale closure values.
   const activeRef     = useRef(active);
   const containerWRef = useRef(containerW);
-  useEffect(() => { activeRef.current = active; });
-  useEffect(() => { containerWRef.current = containerW; });
+  useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { containerWRef.current = containerW; }, [containerW]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -66,96 +90,139 @@ export default function Carousel({
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => () => {
+    if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
+  }, []);
+
+  function cancelQueuedMove() {
+    if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
+    moveFrame.current = null;
+    pendingX.current = null;
+  }
+
+  function applyTransform(x, animate) {
+    if (!trackRef.current) return;
+    trackRef.current.style.transition = animate
+      ? `transform ${SNAP_DURATION}ms ${SNAP_EASING}`
+      : "none";
+    trackRef.current.style.transform = `translate3d(${x}px, 0, 0)`;
+  }
+
+  function queueTransform(x) {
+    pendingX.current = x;
+    if (moveFrame.current !== null) return;
+
+    moveFrame.current = requestAnimationFrame(() => {
+      moveFrame.current = null;
+      if (pendingX.current !== null) applyTransform(pendingX.current, false);
+      pendingX.current = null;
+    });
+  }
+
+  function moveTo(index, animate = true) {
+    const target = clampIndex(index, total);
+    activeRef.current = target;
+    setActive(target);
+
+    const { tx } = computeLayout(
+      containerWRef.current,
+      target,
+      slideWidthRatio,
+      slideGapRatio,
+      mobileWidthRatio
+    );
+    applyTransform(tx, animate);
+  }
+
   useEffect(() => {
-    if (containerW === 0 || !trackRef.current) return;
+    if (containerW === 0 || !trackRef.current || pointerId.current !== null) return;
     const { tx } = computeLayout(containerW, active, slideWidthRatio, slideGapRatio, mobileWidthRatio);
     const animate = !firstLayout.current;
     firstLayout.current = false;
-    trackRef.current.style.transition = animate
-      ? "transform 0.45s cubic-bezier(0.25, 0.1, 0.25, 1)"
-      : "none";
-    trackRef.current.style.transform = `translateX(${tx}px)`;
+    applyTransform(tx, animate);
   }, [active, containerW, slideWidthRatio, slideGapRatio, mobileWidthRatio]);
-
-  useEffect(() => {
-    if (!dragging) return;
-
-    function handleMouseMove(e) {
-      const delta = e.clientX - dragStartX.current;
-      if (Math.abs(delta) > 5) wasDragged.current = true;
-      if (!trackRef.current) return;
-      const { tx } = computeLayout(containerWRef.current, activeRef.current, slideWidthRatio, slideGapRatio, mobileWidthRatio);
-      trackRef.current.style.transition = "none";
-      trackRef.current.style.transform  = `translateX(${tx + delta}px)`;
-    }
-
-    function handleMouseUp(e) {
-      setDragging(false);
-      const { slideW, gap } = computeLayout(containerWRef.current, 0, slideWidthRatio, slideGapRatio, mobileWidthRatio);
-      const unit = slideW + gap;
-      const dragDelta = dragStartX.current - e.clientX;
-      const target = unit > 0
-        ? Math.max(0, Math.min(total - 1, Math.round(activeRef.current + dragDelta / unit)))
-        : activeRef.current;
-      setActive(target);
-      if (trackRef.current) {
-        const { tx } = computeLayout(containerWRef.current, target, slideWidthRatio, slideGapRatio, mobileWidthRatio);
-        trackRef.current.style.transition = "transform 0.45s cubic-bezier(0.25, 0.1, 0.25, 1)";
-        trackRef.current.style.transform  = `translateX(${tx}px)`;
-      }
-    }
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup",   handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup",   handleMouseUp);
-    };
-  }, [dragging, total, slideWidthRatio, slideGapRatio, mobileWidthRatio]);
 
   if (total === 0) return null;
 
   const { slideW, gap } = computeLayout(containerW, active, slideWidthRatio, slideGapRatio, mobileWidthRatio);
 
-  function prev() { setActive(a => Math.max(0, a - 1)); }
-  function next() { setActive(a => Math.min(total - 1, a + 1)); }
+  function prev() { moveTo(activeRef.current - 1); }
+  function next() { moveTo(activeRef.current + 1); }
 
-  function handleMouseDown(e) {
-    e.preventDefault();
+  function handlePointerDown(e) {
+    if (pointerId.current !== null || (e.pointerType === "mouse" && e.button !== 0)) return;
+    if (!trackRef.current) return;
+
+    cancelQueuedMove();
+    const currentX = renderedTranslateX(trackRef.current);
+    applyTransform(currentX, false);
+
+    pointerId.current = e.pointerId;
     dragStartX.current = e.clientX;
+    dragOriginX.current = currentX;
+    dragStartAt.current = performance.now();
     wasDragged.current = false;
     setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    if (e.pointerType === "mouse") e.preventDefault();
   }
 
-  function handleTouchStart(e) {
-    touchStartX.current = e.touches[0].clientX;
-    wasDragged.current = false;
+  function handlePointerMove(e) {
+    if (pointerId.current !== e.pointerId) return;
+
+    let delta = e.clientX - dragStartX.current;
+    if (Math.abs(delta) > DRAG_THRESHOLD) wasDragged.current = true;
+
+    // A little resistance at either end makes the boundary feel physical
+    // without allowing the carousel to drift far beyond its content.
+    const pullingPastStart = activeRef.current === 0 && delta > 0;
+    const pullingPastEnd = activeRef.current === total - 1 && delta < 0;
+    if (pullingPastStart || pullingPastEnd) delta *= 0.22;
+
+    queueTransform(dragOriginX.current + delta);
   }
 
-  function handleTouchMove(e) {
-    if (touchStartX.current === null || !trackRef.current) return;
-    const delta = e.touches[0].clientX - touchStartX.current;
-    if (Math.abs(delta) > 5) wasDragged.current = true;
-    const { tx } = computeLayout(containerWRef.current, activeRef.current, slideWidthRatio, slideGapRatio, mobileWidthRatio);
-    trackRef.current.style.transition = "none";
-    trackRef.current.style.transform  = `translateX(${tx + delta}px)`;
-  }
+  function finishPointer(e, cancelled = false) {
+    if (pointerId.current !== e.pointerId) return;
 
-  function handleTouchEnd(e) {
-    if (touchStartX.current === null) return;
+    cancelQueuedMove();
+    pointerId.current = null;
+    setDragging(false);
+
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    if (cancelled) {
+      moveTo(activeRef.current);
+      return;
+    }
+
     const { slideW, gap } = computeLayout(containerWRef.current, 0, slideWidthRatio, slideGapRatio, mobileWidthRatio);
     const unit = slideW + gap;
-    const dragDelta = touchStartX.current - e.changedTouches[0].clientX;
-    const target = unit > 0
-      ? Math.max(0, Math.min(total - 1, Math.round(activeRef.current + dragDelta / unit)))
-      : activeRef.current;
-    setActive(target);
-    if (trackRef.current) {
-      const { tx } = computeLayout(containerWRef.current, target, slideWidthRatio, slideGapRatio, mobileWidthRatio);
-      trackRef.current.style.transition = "transform 0.45s cubic-bezier(0.25, 0.1, 0.25, 1)";
-      trackRef.current.style.transform  = `translateX(${tx}px)`;
+    const dragDistance = dragStartX.current - e.clientX;
+    const elapsed = Math.max(1, performance.now() - dragStartAt.current);
+    const velocity = dragDistance / elapsed;
+    let slideOffset = unit > 0 ? Math.round(dragDistance / unit) : 0;
+
+    const snapDistance = Math.min(56, unit * 0.16);
+    if (
+      slideOffset === 0 &&
+      (Math.abs(dragDistance) >= snapDistance || Math.abs(velocity) >= FLICK_VELOCITY)
+    ) {
+      slideOffset = Math.sign(dragDistance);
     }
-    touchStartX.current = null;
+
+    moveTo(activeRef.current + slideOffset);
+  }
+
+  function handleLostPointerCapture(e) {
+    if (pointerId.current !== e.pointerId) return;
+    cancelQueuedMove();
+    pointerId.current = null;
+    setDragging(false);
+    moveTo(activeRef.current);
   }
 
   return (
@@ -164,11 +231,18 @@ export default function Carousel({
         <div
           ref={trackRef}
           className={`flex select-none ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
-          style={{ gap: `${gap}px`, willChange: "transform" }}
-          onMouseDown={handleMouseDown}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          style={{
+            gap: `${gap}px`,
+            touchAction: "pan-y pinch-zoom",
+            willChange: "transform",
+            WebkitUserDrag: "none",
+          }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={finishPointer}
+          onPointerCancel={(e) => finishPointer(e, true)}
+          onLostPointerCapture={handleLostPointerCapture}
+          onDragStart={(e) => e.preventDefault()}
         >
           {valid.map((slide, i) => (
             <div
@@ -198,7 +272,7 @@ export default function Carousel({
             {valid.map((_, i) => (
               <button
                 key={i}
-                onClick={() => setActive(i)}
+                onClick={() => moveTo(i)}
                 aria-label={`Go to slide ${i + 1}`}
                 className={`w-2 h-2 rounded-full transition-all duration-300 ${
                   i === active ? "bg-[var(--color-accent)] scale-125" : "bg-[var(--color-surface)] hover:bg-[var(--color-border-warm)]"
