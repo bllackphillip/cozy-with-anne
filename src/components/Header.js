@@ -6,46 +6,9 @@ import { usePathname } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 
 /*
-  HEADER with Cart Icon and Click-triggered Dropdowns
-
-  APPROACH HISTORY — kept as a record of the thought process:
-
-  Attempt 1: opacity-0 on background div when isHome && !pastHero
-    → Discarded: CSS can't transition background-image, only opacity.
-      Used a separate absolutely-positioned background div with transition-opacity.
-      Smooth fade worked but user preferred a sharp switch.
-
-  Attempt 2: bg-[#f5f0e8] (solid color, no texture) for the "transparent" state
-    → Discarded: solid color without texture created a visible seam against the
-      textured hero section below.
-
-  Attempt 3: scrollY === 0 → warm, scrollY > 0 → transparent
-    → Discarded: switching to transparent at scrollY=1 showed white html background
-      because the hero section hadn't risen behind the header yet (only 1px of hero
-      was behind the header area; the rest was still the white html background).
-
-  Attempt 4: scrollY < HEADER_HEIGHT (64px) → warm, scrollY >= 64 → transparent
-    → Better — no white flash at transition point. But still imperfect because
-      at exactly scrollY=64 the hero fills the header area only at the top edge,
-      and rapid scrolling could still expose edge cases.
-
-  Final approach (below): extend the hero 64px upward behind the header (-mt-16 in
-  page.js) so the floral texture aligns. The header is transparent while it sits
-  over the hero and turns solid only once the user scrolls past it.
-
-  "Past hero" = the user has actually scrolled (window.scrollY > 0) AND the
-  #hero-end sentinel has reached the header line. The scrollY guard is load-bearing:
-  at the very top of the page scrollY is 0, so the header is ALWAYS transparent
-  there, no matter what a transient layout measurement returns mid-hydration.
-
-  Why this bug was production- and hard-load-only: on a fresh load / refresh the
-  effect can run before late assets (the logo image, web fonts) finish settling the
-  hero's height, so a position-only check momentarily saw the sentinel near the top,
-  flipped the header solid, and it stuck. On localhost those assets are instant, and
-  a client-side nav back to Home re-runs the effect after layout is already settled,
-  so neither path ever exposed it. Gating on scrollY removes the dependence on
-  load-time layout entirely. (An earlier IntersectionObserver failed for the same
-  root reason: its async first fire raced the same unsettled layout.)
+  The homepage extends behind this sticky header. Its #hero-end marker controls
+  the transition from transparent to solid, while other routes remain solid.
+  Using mounted page content as the authority avoids route/hydration races.
 */
 
 const navLinks = [
@@ -75,43 +38,13 @@ const navLinks = [
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [pastHero, setPastHero] = useState(false);
+  const [homeHeroPresent, setHomeHeroPresent] = useState(false);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [mobileExpanded, setMobileExpanded] = useState(null);
-  const [resolvedPathname, setResolvedPathname] = useState(null);
   const headerRef = useRef(null);
   const { cartCount, setIsCartOpen } = useCart();
-  const routerPathname = usePathname();
-
-  /*
-    THE root cause of the long-running "homepage header is solid / Home tab not
-    active on a hard load, but fine after navigating away and back" bug:
-
-    On the statically prerendered homepage ONLY, usePathname() comes back as an
-    EMPTY string at build time (other routes prerender their real path correctly
-    — verified in the deployed HTML: /about renders About active, but / renders
-    NO link active). Because the Home link matches with an exact `pathname === "/"`,
-    an empty string makes Home inactive and isHome false, so the header takes the
-    solid, non-home branch. Navigating away and back re-evaluated the router to a
-    real value, which is why it "fixed" itself.
-
-    THE FIX is simply to normalise an empty pathname to "/": the only route that
-    ever yields an empty pathname is the index route, so `|| "/"` is safe and makes
-    the prerendered HTML itself correct (Home active, header transparent) with no
-    dependence on post-hydration timing. We still prefer the browser-authoritative
-    window.location.pathname after mount (resolvedPathname) so a hard-loaded inner
-    page and client navigations stay correct; `?? routerPathname ?? ""` keeps the
-    first render a safe string for the .startsWith() calls below.
-  */
-  const pathname = (resolvedPathname ?? routerPathname ?? "") || "/";
-  const isHome = pathname === "/";
-  // Stays "false" until the browser-authoritative path lands after mount. The
-  // first-paint CSS fallback in globals.css keys off this to hold the homepage
-  // header transparent before React has resolved the real route (no flash).
-  const homeResolved = resolvedPathname !== null;
-
-  useEffect(() => {
-    setResolvedPathname(window.location.pathname);
-  }, [routerPathname]);
+  const pathname = usePathname() || "";
+  const isHome = pathname === "/" || homeHeroPresent;
 
   // Derive close-on-navigate during render — the React-recommended alternative
   // to setState-in-effect. When pathname changes, React re-renders immediately
@@ -126,51 +59,40 @@ export default function Header() {
   }
 
   /*
-    Derive "past hero": the header is solid only when the user has scrolled
-    (window.scrollY > 0) AND the #hero-end sentinel has reached the header line.
-    The scrollY gate keeps the very top of the page transparent no matter what a
-    layout measurement returns. We recompute (rAF-throttled) on EVERY event that
-    can change the geometry or restore a scroll position: scroll, resize, image
-    load, web-font load (document.fonts.ready) and back/forward (bfcache) restore
-    (pageshow). That last pair is why the bug kept "coming back": a bfcache restore
-    or a late font swap could leave a stale value with no event to recompute it.
+    The homepage marker is authoritative for header appearance. Unlike route
+    state, it cannot disagree with the page content that is actually mounted.
+    Watching the DOM handles streamed hard loads and client-side route changes.
   */
   useEffect(() => {
-    if (!isHome) return;
-
     let frame = 0;
     let cancelled = false;
-    let sentinel = document.getElementById("hero-end");
-    let sentinelObserver = null;
 
     const compute = () => {
       if (cancelled) return;
-      sentinel ??= document.getElementById("hero-end");
-      if (!sentinel) return;
+      const sentinel = document.getElementById("hero-end");
+      const nextHomeHeroPresent = Boolean(sentinel);
+      setHomeHeroPresent((current) =>
+        current === nextHomeHeroPresent ? current : nextHomeHeroPresent
+      );
+
+      if (!sentinel) {
+        setPastHero((current) => (current ? false : current));
+        return;
+      }
+
       const height = headerRef.current ? headerRef.current.offsetHeight : 64;
-      setPastHero(window.scrollY > 0 && sentinel.getBoundingClientRect().top <= height);
+      const nextPastHero =
+        window.scrollY > 0 && sentinel.getBoundingClientRect().top <= height;
+      setPastHero((current) => (current === nextPastHero ? current : nextPastHero));
     };
     const schedule = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(compute);
     };
 
-    schedule(); // initial — top of page (scrollY 0) resolves to transparent
-    /*
-      On a hard load the preserved header can hydrate before the streamed
-      homepage content has inserted #hero-end. Watch until it appears instead
-      of returning early and permanently missing the scroll setup.
-    */
-    if (!sentinel) {
-      sentinelObserver = new MutationObserver(() => {
-        sentinel = document.getElementById("hero-end");
-        if (!sentinel) return;
-        sentinelObserver.disconnect();
-        sentinelObserver = null;
-        schedule();
-      });
-      sentinelObserver.observe(document.body, { childList: true, subtree: true });
-    }
+    schedule();
+    const pageObserver = new MutationObserver(schedule);
+    pageObserver.observe(document.body, { childList: true, subtree: true });
 
     window.addEventListener("scroll", schedule, { passive: true });
     window.addEventListener("resize", schedule);
@@ -184,13 +106,13 @@ export default function Header() {
     return () => {
       cancelled = true;
       cancelAnimationFrame(frame);
-      sentinelObserver?.disconnect();
+      pageObserver.disconnect();
       window.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       window.removeEventListener("load", schedule);
       window.removeEventListener("pageshow", schedule);
     };
-  }, [isHome]);
+  }, []);
 
   // Close desktop dropdown when clicking outside the header
   useEffect(() => {
@@ -223,7 +145,8 @@ export default function Header() {
     <header
       ref={headerRef}
       className="site-header sticky top-0 z-50"
-      data-home-resolved={homeResolved ? "true" : "false"}
+      data-past-hero={pastHero ? "true" : "false"}
+      data-mobile-menu-open={mobileMenuOpen ? "true" : "false"}
     >
       {/* Persistent background layer — always in the DOM from first render.
           background-attachment: fixed is set once and never toggled, so the

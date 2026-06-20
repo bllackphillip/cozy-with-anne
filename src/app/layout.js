@@ -31,10 +31,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Apply browser-only first-paint state before React hydrates. */}
+        {/* Apply the saved palette before React hydrates. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('cwa-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}document.documentElement.setAttribute('data-initial-page',location.pathname==='/'?'home':'other');})()`,
+            __html: `(function(){try{var t=localStorage.getItem('cwa-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})()`,
           }}
         />
       </head>

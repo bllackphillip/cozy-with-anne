@@ -81,34 +81,18 @@ body {
 }
 
 /*
-  Homepage header first-paint fallback.
-
-  On the statically prerendered homepage, usePathname() is seeded with a stale,
-  non-"/" value, so the server HTML takes the solid non-home branch. layout.js
-  marks the browser's real initial route before the body paints; Header reads the
-  authoritative window.location.pathname after mount and flips data-home-resolved
-  to "true". These selectors correct only that unresolved first frame (so there
-  is no solid-header flash on home); once Header resolves the route the normal
-  React/sentinel state takes complete control.
+  #hero-end is rendered only by the homepage. Let the mounted page content own
+  this first-paint state so hydration cannot replace it with stale route state.
 */
-html[data-initial-page="home"]
-  .site-header[data-home-resolved="false"]
+body:has(#hero-end)
+  .site-header[data-past-hero="false"][data-mobile-menu-open="false"]
   .site-header-bg {
   opacity: 0;
   pointer-events: none;
   border-color: transparent;
 }
 
-html[data-initial-page="home"]
-  .site-header[data-home-resolved="false"]
-  .site-header-logo {
-  opacity: 0;
-  pointer-events: none;
-}
-
-html[data-initial-page="home"]
-  .site-header[data-home-resolved="false"]
-  .site-header-home-link {
+body:has(#hero-end) .site-header-home-link {
   background-color: var(--color-accent);
   color: var(--color-bg);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
