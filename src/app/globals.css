@@ -92,6 +92,13 @@ body:has(#hero-end)
   border-color: transparent;
 }
 
+body:has(#hero-end)
+  .site-header[data-past-hero="false"][data-mobile-menu-open="false"]
+  .site-header-logo {
+  opacity: 0;
+  pointer-events: none;
+}
+
 body:has(#hero-end) .site-header-home-link {
   background-color: var(--color-accent);
   color: var(--color-bg);
