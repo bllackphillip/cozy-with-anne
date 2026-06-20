@@ -152,7 +152,7 @@ export default function Header() {
           background-attachment: fixed is set once and never toggled, so the
           GPU compositing layer is pre-created and never causes a jump. */}
       <div
-        className={`site-header-bg absolute inset-0 floral-top ${isTransparent ? "opacity-0 pointer-events-none" : "border-b border-[var(--color-accent)]"}`}
+        className={`site-header-bg absolute inset-0 floral-top ${isTransparent ? "opacity-0 pointer-events-none" : "border-b border-[var(--color-border-warm)]"}`}
         aria-hidden="true"
       />
 
