@@ -11,11 +11,10 @@ export default function FeaturedArtworkCarousel({ artworks }) {
       slideWidthRatio={0.34}
       mobileWidthRatio={0.82}
       innerClassName="max-w-6xl mx-auto"
-      renderSlide={(artwork, _isActive, wasDragged) => (
+      renderSlide={(artwork) => (
         <ArtworkCard
           artwork={artwork}
           href={artwork.portfolioPath}
-          onClick={(e) => { if (wasDragged.current) e.preventDefault(); }}
         >
           <p className="text-center text-sm text-[#4a2e2e] font-medium">
             {artwork.title}

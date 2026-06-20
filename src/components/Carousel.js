@@ -4,9 +4,10 @@ import { useState, useRef, useEffect } from "react";
 
 const MOUSE_DRAG_THRESHOLD = 5;
 const TOUCH_DRAG_THRESHOLD = 10;
-const FLICK_VELOCITY = 0.35;
-const SNAP_DURATION = 420;
-const SNAP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+const CONTROL_MOVE_DURATION = 420;
+const CONTROL_MOVE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+const DRAG_CLICK_FALLBACK_WINDOW = 100;
+const DRAG_CLICK_SUPPRESSION_TIMEOUT = 700;
 
 function ChevronLeft() {
   return (
@@ -73,8 +74,10 @@ export default function Carousel({
   const pointerId    = useRef(null);
   const dragStartX   = useRef(0);
   const dragOriginX  = useRef(0);
-  const dragStartAt  = useRef(0);
   const dragThreshold = useRef(MOUSE_DRAG_THRESHOLD);
+  const suppressedClick = useRef(null);
+  const suppressClickTimer = useRef(null);
+  const skipNextPositionEffect = useRef(false);
   const pendingX     = useRef(null);
   const moveFrame    = useRef(null);
 
@@ -94,6 +97,9 @@ export default function Carousel({
 
   useEffect(() => () => {
     if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
+    if (suppressClickTimer.current !== null) {
+      clearTimeout(suppressClickTimer.current);
+    }
   }, []);
 
   function cancelQueuedMove() {
@@ -105,7 +111,7 @@ export default function Carousel({
   function applyTransform(x, animate) {
     if (!trackRef.current) return;
     trackRef.current.style.transition = animate
-      ? `transform ${SNAP_DURATION}ms ${SNAP_EASING}`
+      ? `transform ${CONTROL_MOVE_DURATION}ms ${CONTROL_MOVE_EASING}`
       : "none";
     trackRef.current.style.transform = `translate3d(${x}px, 0, 0)`;
   }
@@ -138,6 +144,10 @@ export default function Carousel({
 
   useEffect(() => {
     if (containerW === 0 || !trackRef.current || pointerId.current !== null) return;
+    if (skipNextPositionEffect.current) {
+      skipNextPositionEffect.current = false;
+      return;
+    }
     const { tx } = computeLayout(containerW, active, slideWidthRatio, slideGapRatio, mobileWidthRatio);
     const animate = !firstLayout.current;
     firstLayout.current = false;
@@ -151,14 +161,99 @@ export default function Carousel({
   function prev() { moveTo(activeRef.current - 1); }
   function next() { moveTo(activeRef.current + 1); }
 
+  function getTrackBounds() {
+    const { tx: maxX } = computeLayout(
+      containerWRef.current,
+      0,
+      slideWidthRatio,
+      slideGapRatio,
+      mobileWidthRatio
+    );
+    const { tx: minX } = computeLayout(
+      containerWRef.current,
+      total - 1,
+      slideWidthRatio,
+      slideGapRatio,
+      mobileWidthRatio
+    );
+    return { minX, maxX };
+  }
+
+  function clampTrackX(x) {
+    const { minX, maxX } = getTrackBounds();
+    return Math.max(minX, Math.min(maxX, x));
+  }
+
+  function resistTrackX(x) {
+    const { minX, maxX } = getTrackBounds();
+    if (x > maxX) return maxX + (x - maxX) * 0.22;
+    if (x < minX) return minX + (x - minX) * 0.22;
+    return x;
+  }
+
+  function syncActiveToTrack(x) {
+    const { slideW, gap, tx: firstX } = computeLayout(
+      containerWRef.current,
+      0,
+      slideWidthRatio,
+      slideGapRatio,
+      mobileWidthRatio
+    );
+    const unit = slideW + gap;
+    const nearest = unit > 0 ? clampIndex(Math.round((firstX - x) / unit), total) : 0;
+    if (nearest === activeRef.current) return;
+
+    activeRef.current = nearest;
+    skipNextPositionEffect.current = true;
+    setActive(nearest);
+  }
+
+  function clearClickSuppression() {
+    suppressedClick.current = null;
+    if (suppressClickTimer.current !== null) {
+      clearTimeout(suppressClickTimer.current);
+      suppressClickTimer.current = null;
+    }
+  }
+
+  function suppressDragClick(e) {
+    suppressedClick.current = {
+      pointerId: e.pointerId,
+      releasedAt: e.timeStamp,
+    };
+    if (suppressClickTimer.current !== null) {
+      clearTimeout(suppressClickTimer.current);
+    }
+    suppressClickTimer.current = window.setTimeout(() => {
+      suppressedClick.current = null;
+      suppressClickTimer.current = null;
+    }, DRAG_CLICK_SUPPRESSION_TIMEOUT);
+  }
+
+  function shouldSuppressClick(e) {
+    const suppression = suppressedClick.current;
+    if (!suppression) return false;
+
+    const clickPointerId = e.nativeEvent?.pointerId;
+    const hasPointerId = Number.isFinite(clickPointerId) && clickPointerId > 0;
+    const matchesDrag = hasPointerId
+      ? clickPointerId === suppression.pointerId
+      : e.timeStamp - suppression.releasedAt <= DRAG_CLICK_FALLBACK_WINDOW;
+
+    if (matchesDrag) clearClickSuppression();
+    return matchesDrag;
+  }
+
   function handlePointerDown(e) {
+    clearClickSuppression();
     if (pointerId.current !== null || (e.pointerType === "mouse" && e.button !== 0)) return;
     if (!trackRef.current) return;
 
     cancelQueuedMove();
+    const currentX = renderedTranslateX(trackRef.current);
+    applyTransform(currentX, false);
     pointerId.current = e.pointerId;
     dragStartX.current = e.clientX;
-    dragStartAt.current = performance.now();
     dragThreshold.current = e.pointerType === "touch"
       ? TOUCH_DRAG_THRESHOLD
       : MOUSE_DRAG_THRESHOLD;
@@ -185,22 +280,11 @@ export default function Carousel({
 
       // Start from the track's currently rendered position so grabbing it
       // during a snap animation does not cause a jump.
-      const resistedDelta =
-        (activeRef.current === 0 && delta > 0) ||
-        (activeRef.current === total - 1 && delta < 0)
-          ? delta * 0.22
-          : delta;
-      dragOriginX.current = currentX - resistedDelta;
+      dragOriginX.current = currentX - delta;
       applyTransform(currentX, false);
     }
 
-    // A little resistance at either end makes the boundary feel physical
-    // without allowing the carousel to drift far beyond its content.
-    const pullingPastStart = activeRef.current === 0 && delta > 0;
-    const pullingPastEnd = activeRef.current === total - 1 && delta < 0;
-    if (pullingPastStart || pullingPastEnd) delta *= 0.22;
-
-    queueTransform(dragOriginX.current + delta);
+    queueTransform(resistTrackX(dragOriginX.current + delta));
   }
 
   function finishPointer(e, cancelled = false) {
@@ -209,6 +293,7 @@ export default function Carousel({
     const didDrag = wasDragged.current;
     cancelQueuedMove();
     pointerId.current = null;
+    wasDragged.current = false;
     setDragging(false);
 
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -216,30 +301,20 @@ export default function Carousel({
     }
 
     if (cancelled && didDrag) {
-      moveTo(activeRef.current);
+      const finalX = clampTrackX(renderedTranslateX(trackRef.current));
+      applyTransform(finalX, false);
+      syncActiveToTrack(finalX);
       return;
     }
 
-    // A clean press was never captured, so the nested link/button receives its
-    // normal click. Only a confirmed drag enters the snapping path below.
+    // A clean press was never captured, so the nested link/button receives
+    // its normal click.
     if (!didDrag) return;
 
-    const { slideW, gap } = computeLayout(containerWRef.current, 0, slideWidthRatio, slideGapRatio, mobileWidthRatio);
-    const unit = slideW + gap;
-    const dragDistance = dragStartX.current - e.clientX;
-    const elapsed = Math.max(1, performance.now() - dragStartAt.current);
-    const velocity = dragDistance / elapsed;
-    let slideOffset = unit > 0 ? Math.round(dragDistance / unit) : 0;
-
-    const snapDistance = Math.min(56, unit * 0.16);
-    if (
-      slideOffset === 0 &&
-      (Math.abs(dragDistance) >= snapDistance || Math.abs(velocity) >= FLICK_VELOCITY)
-    ) {
-      slideOffset = Math.sign(dragDistance);
-    }
-
-    moveTo(activeRef.current + slideOffset);
+    const finalX = clampTrackX(dragOriginX.current + e.clientX - dragStartX.current);
+    applyTransform(finalX, false);
+    syncActiveToTrack(finalX);
+    suppressDragClick(e);
   }
 
   function handleLostPointerCapture(e) {
@@ -247,9 +322,18 @@ export default function Carousel({
     // from a child link; only recover when this track itself loses capture.
     if (e.target !== e.currentTarget || pointerId.current !== e.pointerId) return;
     cancelQueuedMove();
+    const finalX = clampTrackX(renderedTranslateX(trackRef.current));
     pointerId.current = null;
+    wasDragged.current = false;
     setDragging(false);
-    moveTo(activeRef.current);
+    applyTransform(finalX, false);
+    syncActiveToTrack(finalX);
+  }
+
+  function handleClickCapture(e) {
+    if (!shouldSuppressClick(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   return (
@@ -269,6 +353,7 @@ export default function Carousel({
           onPointerUp={finishPointer}
           onPointerCancel={(e) => finishPointer(e, true)}
           onLostPointerCapture={handleLostPointerCapture}
+          onClickCapture={handleClickCapture}
           onDragStart={(e) => e.preventDefault()}
         >
           {valid.map((slide, i) => (
@@ -277,7 +362,7 @@ export default function Carousel({
               className="flex-shrink-0"
               style={{ width: containerW > 0 ? `${slideW}px` : `${slideWidthRatio * 100}%` }}  /* SSR fallback; ResizeObserver corrects on mount */
             >
-              {renderSlide(slide, i === active, wasDragged)}
+              {renderSlide(slide, i === active)}
             </div>
           ))}
         </div>

@@ -10,15 +10,10 @@ const ARROW_W = 32;
 const CONTROLS_W = ARROW_W * 2 + GAP * 2;
 const MOUSE_DRAG_THRESHOLD = 5;
 const TOUCH_DRAG_THRESHOLD = 10;
-const SNAP_DURATION = 220;
-const SNAP_EASING = "ease-out";
-const TOUCH_MOMENTUM_PROJECTION = 180;
-const TOUCH_MOMENTUM_MIN_VELOCITY = 0.08;
-const TOUCH_MOMENTUM_MAX_AGE = 80;
-const TOUCH_MOMENTUM_MIN_DURATION = 160;
-const TOUCH_MOMENTUM_MAX_DURATION = 420;
-const TOUCH_MOMENTUM_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
-const DRAG_CLICK_SUPPRESSION_TIMEOUT = 500;
+const SELECTION_MOVE_DURATION = 220;
+const SELECTION_MOVE_EASING = "ease-out";
+const DRAG_CLICK_FALLBACK_WINDOW = 100;
+const DRAG_CLICK_SUPPRESSION_TIMEOUT = 700;
 
 function ChevronLeft() {
   return (
@@ -62,16 +57,11 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
   const dragStartX = useRef(0);
   const dragStartT = useRef(0);
   const dragThreshold = useRef(MOUSE_DRAG_THRESHOLD);
-  const activePointerType = useRef(null);
   const wasDragged = useRef(false);
-  const lastMoveX = useRef(0);
-  const lastMoveAt = useRef(0);
-  const touchVelocity = useRef(0);
-  const suppressClick = useRef(false);
+  const suppressedClick = useRef(null);
   const suppressClickTimer = useRef(null);
   const pendingT = useRef(null);
   const moveFrame = useRef(null);
-  const momentumFrame = useRef(null);
 
   const total = images?.length ?? 0;
   const visibleWithoutControls = rowW > 0
@@ -100,13 +90,17 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
 
   useEffect(() => () => {
     if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
-    if (momentumFrame.current !== null) cancelAnimationFrame(momentumFrame.current);
     if (suppressClickTimer.current !== null) {
       clearTimeout(suppressClickTimer.current);
     }
   }, []);
 
-  function applyTranslate(x, animate = false, duration = SNAP_DURATION, easing = SNAP_EASING) {
+  function applyTranslate(
+    x,
+    animate = false,
+    duration = SELECTION_MOVE_DURATION,
+    easing = SELECTION_MOVE_EASING
+  ) {
     currentT.current = x;
     if (!trackRef.current) return;
     trackRef.current.style.transition = animate
@@ -119,13 +113,6 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
     moveFrame.current = null;
     pendingT.current = null;
-  }
-
-  function cancelMomentumFrame() {
-    if (momentumFrame.current !== null) {
-      cancelAnimationFrame(momentumFrame.current);
-      momentumFrame.current = null;
-    }
   }
 
   function queueTranslate(x) {
@@ -165,64 +152,40 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
 
   if (!images || total <= 1) return null;
 
-  function snapToClosestSlot() {
-    const snapIndex = Math.round(-currentT.current / SLOT);
-    const clamped = Math.max(0, Math.min(total - visibleCount, snapIndex));
-    applyTranslate(-clamped * SLOT, true);
-  }
-
   function clearClickSuppression() {
-    suppressClick.current = false;
+    suppressedClick.current = null;
     if (suppressClickTimer.current !== null) {
       clearTimeout(suppressClickTimer.current);
       suppressClickTimer.current = null;
     }
   }
 
-  function suppressDragClick() {
-    suppressClick.current = true;
+  function suppressDragClick(e) {
+    suppressedClick.current = {
+      pointerId: e.pointerId,
+      releasedAt: e.timeStamp,
+    };
     if (suppressClickTimer.current !== null) {
       clearTimeout(suppressClickTimer.current);
     }
-    // Pointerdown from a new gesture clears this immediately. The timeout is
-    // only a fallback for keyboard activation or browsers that emit no click
-    // after the completed drag.
     suppressClickTimer.current = window.setTimeout(() => {
-      suppressClick.current = false;
+      suppressedClick.current = null;
       suppressClickTimer.current = null;
     }, DRAG_CLICK_SUPPRESSION_TIMEOUT);
   }
 
-  function coastTouchStrip(finalT, releasedAt) {
-    const velocityIsFresh = releasedAt - lastMoveAt.current <= TOUCH_MOMENTUM_MAX_AGE;
-    const velocity = velocityIsFresh ? touchVelocity.current : 0;
-    if (Math.abs(velocity) < TOUCH_MOMENTUM_MIN_VELOCITY) {
-      applyTranslate(finalT);
-      return;
-    }
+  function shouldSuppressClick(e) {
+    const suppression = suppressedClick.current;
+    if (!suppression) return false;
 
-    const target = Math.max(
-      minT,
-      Math.min(maxT, finalT + velocity * TOUCH_MOMENTUM_PROJECTION)
-    );
-    const distance = Math.abs(target - finalT);
-    if (distance < 1) {
-      applyTranslate(finalT);
-      return;
-    }
+    const clickPointerId = e.nativeEvent?.pointerId;
+    const hasPointerId = Number.isFinite(clickPointerId) && clickPointerId > 0;
+    const matchesDrag = hasPointerId
+      ? clickPointerId === suppression.pointerId
+      : e.timeStamp - suppression.releasedAt <= DRAG_CLICK_FALLBACK_WINDOW;
 
-    const duration = Math.max(
-      TOUCH_MOMENTUM_MIN_DURATION,
-      Math.min(TOUCH_MOMENTUM_MAX_DURATION, 180 + distance * 0.75)
-    );
-    // Give the browser one frame to paint the exact release position before
-    // transitioning to the momentum target. Without this separation, both
-    // writes can be batched into another visible jump.
-    cancelMomentumFrame();
-    momentumFrame.current = requestAnimationFrame(() => {
-      momentumFrame.current = null;
-      applyTranslate(target, true, duration, TOUCH_MOMENTUM_EASING);
-    });
+    if (matchesDrag) clearClickSuppression();
+    return matchesDrag;
   }
 
   function handlePointerDown(e) {
@@ -239,7 +202,6 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     }
 
     cancelQueuedMove();
-    cancelMomentumFrame();
     const currentX = renderedTranslateX(trackRef.current);
     applyTranslate(currentX);
     pointerId.current = e.pointerId;
@@ -248,24 +210,11 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     dragThreshold.current = e.pointerType === "touch"
       ? TOUCH_DRAG_THRESHOLD
       : MOUSE_DRAG_THRESHOLD;
-    activePointerType.current = e.pointerType;
     wasDragged.current = false;
-    lastMoveX.current = e.clientX;
-    lastMoveAt.current = e.timeStamp;
-    touchVelocity.current = 0;
   }
 
   function handlePointerMove(e) {
     if (pointerId.current !== e.pointerId) return;
-
-    const now = e.timeStamp;
-    const elapsed = now - lastMoveAt.current;
-    if (elapsed > 0) {
-      const instantaneousVelocity = (e.clientX - lastMoveX.current) / elapsed;
-      touchVelocity.current = touchVelocity.current * 0.4 + instantaneousVelocity * 0.6;
-      lastMoveX.current = e.clientX;
-      lastMoveAt.current = now;
-    }
 
     const delta = e.clientX - dragStartX.current;
     if (!wasDragged.current) {
@@ -294,10 +243,8 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     if (pointerId.current !== e.pointerId) return;
 
     const didDrag = wasDragged.current;
-    const pointerType = activePointerType.current;
     cancelQueuedMove();
     pointerId.current = null;
-    activePointerType.current = null;
     wasDragged.current = false;
     setDragging(false);
 
@@ -306,9 +253,8 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     }
 
     if (cancelled && didDrag) {
-      if (pointerType === "mouse") {
-        snapToClosestSlot();
-      }
+      const currentX = renderedTranslateX(trackRef.current);
+      applyTranslate(Math.max(minT, Math.min(maxT, currentX)));
       return;
     }
 
@@ -324,31 +270,22 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     // This matters most for a short, fast swipe whose last move was still
     // waiting for requestAnimationFrame when pointerup arrived.
     applyTranslate(finalT);
-    suppressDragClick();
-
-    if (pointerType === "mouse") {
-      snapToClosestSlot();
-    } else {
-      coastTouchStrip(finalT, e.timeStamp);
-    }
+    suppressDragClick(e);
   }
 
   function handleLostPointerCapture(e) {
     // Ignore bubbled lostpointercapture events from thumbnail buttons.
     if (e.target !== e.currentTarget || pointerId.current !== e.pointerId) return;
     cancelQueuedMove();
+    const currentX = renderedTranslateX(trackRef.current);
     pointerId.current = null;
-    activePointerType.current = null;
     wasDragged.current = false;
     setDragging(false);
-    snapToClosestSlot();
+    applyTranslate(Math.max(minT, Math.min(maxT, currentX)));
   }
 
-  function handleThumbClick(i) {
-    if (suppressClick.current) {
-      clearClickSuppression();
-      return;
-    }
+  function handleThumbClick(e, i) {
+    if (shouldSuppressClick(e)) return;
     onSelect(i);
   }
 
@@ -357,7 +294,7 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     return (
       <button
         key={i}
-        onClick={() => handleThumbClick(i)}
+        onClick={(e) => handleThumbClick(e, i)}
         className={`flex-shrink-0 rounded-lg overflow-hidden relative transition-all select-none ${
           selected ? "ring-2 ring-gray-900 opacity-100" : "opacity-60 hover:opacity-100"
         }`}
