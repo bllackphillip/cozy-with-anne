@@ -225,12 +225,12 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
 
   return (
     <div ref={rootRef}>
-      <p className="mb-3 text-sm text-[var(--color-accent)]">
+      <p className="mb-3 text-center text-sm text-[var(--color-accent)]">
         <span className="zoom-hint-fine">
-          Come a little closer - <span aria-hidden="true">{"\u{1F50D}"}</span> Hover to explore the brushstrokes
+          <span aria-hidden="true">{"\u{1F50D}"}</span> Hover to explore the brushstrokes
         </span>
         <span className="zoom-hint-touch">
-          Come a little closer - <span aria-hidden="true">{"\u{1F50D}"}</span> Tap the artwork, then drag to explore its details
+          <span aria-hidden="true">{"\u{1F50D}"}</span> Tap &amp; drag to explore the brushstrokes
         </span>
       </p>
 
@@ -269,15 +269,6 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
 
           {src && showLens && renderLens()}
         </div>
-
-        {src && touchZoomActive && (
-          <div
-            className="absolute z-20 top-3 left-1/2 -translate-x-1/2 max-w-[calc(100%-1.5rem)] rounded-full bg-black/65 px-3 py-1.5 text-center text-xs text-white shadow-md pointer-events-none"
-            aria-live="polite"
-          >
-            Detail view - drag to wander - tap outside to close
-          </div>
-        )}
       </div>
     </div>
   );
