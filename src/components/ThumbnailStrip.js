@@ -6,6 +6,11 @@ import Image from "next/image";
 const THUMB_W = 80;
 const GAP = 8;
 const SLOT = THUMB_W + GAP;
+const ARROW_W = 32;
+const CONTROLS_W = ARROW_W * 2 + GAP * 2;
+const DRAG_THRESHOLD = 5;
+const SNAP_DURATION = 220;
+const SNAP_EASING = "ease-out";
 
 function ChevronLeft() {
   return (
@@ -29,90 +34,164 @@ function getSrc(img) {
 
 export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
   const [dragging, setDragging] = useState(false);
-  // Track actual container width so visibleCount adapts to mobile/desktop.
-  const [containerW, setContainerW] = useState(0);
+  const [rowW, setRowW] = useState(0);
 
   const trackRef = useRef(null);
-  const containerRef = useRef(null);
+  const rowRef = useRef(null);
   const currentT = useRef(0);
-  const dragStartX = useRef(null);
+  const pointerId = useRef(null);
+  const dragStartX = useRef(0);
   const dragStartT = useRef(0);
   const wasDragged = useRef(false);
+  const pendingT = useRef(null);
+  const moveFrame = useRef(null);
 
   const total = images?.length ?? 0;
-  // How many thumbnails actually fit in the measured container width.
-  const visibleCount = containerW > 0 ? Math.max(1, Math.floor((containerW + GAP) / SLOT)) : 5;
-  const minT = total > visibleCount ? -(total - visibleCount) * SLOT : 0;
+  const visibleWithoutControls = rowW > 0
+    ? Math.max(1, Math.floor((rowW + GAP) / SLOT))
+    : total;
+  const hasOverflow = rowW > 0 && total > visibleWithoutControls;
+  const viewportW = hasOverflow ? Math.max(THUMB_W, rowW - CONTROLS_W) : rowW;
+  const visibleCount = rowW > 0
+    ? Math.max(1, Math.floor((viewportW + GAP) / SLOT))
+    : total;
+  const minT = hasOverflow ? -(total - visibleCount) * SLOT : 0;
   const maxT = 0;
 
-  // Measure container width and keep it updated on resize.
+  // The viewport is always mounted, including for short galleries. This is
+  // important on mobile: deciding whether thumbnails overflow requires a real
+  // measurement rather than the old hard-coded assumption that five fit.
   useEffect(() => {
-    const el = containerRef.current;
+    const el = rowRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      setContainerW(entry.contentRect.width);
+      setRowW(entry.contentRect.width);
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, [total]);
+
+  useEffect(() => () => {
+    if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
   }, []);
 
-  function applyTranslate(x) {
+  function applyTranslate(x, animate = false) {
     currentT.current = x;
-    if (trackRef.current) trackRef.current.style.transform = `translateX(${x}px)`;
+    if (!trackRef.current) return;
+    trackRef.current.style.transition = animate
+      ? `transform ${SNAP_DURATION}ms ${SNAP_EASING}`
+      : "none";
+    trackRef.current.style.transform = `translate3d(${x}px, 0, 0)`;
   }
 
-  // Keep the selected thumbnail in view, plus a one-thumbnail "peek" of its
-  // neighbours when they exist — so selecting the last visible thumb scrolls the
-  // next hidden image into view (and you can keep walking through to the end).
+  function cancelQueuedMove() {
+    if (moveFrame.current !== null) cancelAnimationFrame(moveFrame.current);
+    moveFrame.current = null;
+    pendingT.current = null;
+  }
+
+  function queueTranslate(x) {
+    pendingT.current = x;
+    if (moveFrame.current !== null) return;
+
+    moveFrame.current = requestAnimationFrame(() => {
+      moveFrame.current = null;
+      if (pendingT.current !== null) applyTranslate(pendingT.current);
+      pendingT.current = null;
+    });
+  }
+
+  // Preserve the existing one-thumbnail peek: selecting the last visible item
+  // reveals the next item, and selecting the first reveals the previous item.
   useEffect(() => {
-    if (total <= visibleCount) return;
+    if (pointerId.current !== null) return;
+
+    if (!hasOverflow) {
+      applyTranslate(0, true);
+      return;
+    }
+
     const firstVisible = Math.round(-currentT.current / SLOT);
     const lastVisible = firstVisible + visibleCount - 1;
     let newFirst = firstVisible;
+
     if (selectedIndex + 1 > lastVisible) {
-      // selection at/over the right edge → advance so the next image peeks in
       newFirst = selectedIndex + 2 - visibleCount;
     } else if (selectedIndex - 1 < firstVisible) {
-      // selection at/over the left edge → step back so the previous image peeks in
       newFirst = selectedIndex - 1;
     }
+
     newFirst = Math.max(0, Math.min(total - visibleCount, newFirst));
-    applyTranslate(Math.max(minT, Math.min(maxT, -newFirst * SLOT)));
-  }, [selectedIndex, total, visibleCount, minT, maxT]);
-
-  // Window-level drag listeners
-  useEffect(() => {
-    if (!dragging) return;
-
-    function handleMove(e) {
-      const delta = e.clientX - dragStartX.current;
-      if (Math.abs(delta) > 5) wasDragged.current = true;
-      applyTranslate(Math.max(minT, Math.min(maxT, dragStartT.current + delta)));
-    }
-
-    function handleUp() {
-      setDragging(false);
-      const snapIndex = Math.round(-currentT.current / SLOT);
-      const clamped = Math.max(0, Math.min(total - visibleCount, snapIndex));
-      applyTranslate(-clamped * SLOT);
-    }
-
-    window.addEventListener("mousemove", handleMove);
-    window.addEventListener("mouseup", handleUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMove);
-      window.removeEventListener("mouseup", handleUp);
-    };
-  }, [dragging, minT, maxT, total, visibleCount]);
+    applyTranslate(Math.max(minT, Math.min(maxT, -newFirst * SLOT)), true);
+  }, [selectedIndex, total, visibleCount, hasOverflow, minT]);
 
   if (!images || total <= 1) return null;
 
-  function handleMouseDown(e) {
-    e.preventDefault();
+  function snapToClosestSlot() {
+    const snapIndex = Math.round(-currentT.current / SLOT);
+    const clamped = Math.max(0, Math.min(total - visibleCount, snapIndex));
+    applyTranslate(-clamped * SLOT, true);
+  }
+
+  function handlePointerDown(e) {
+    if (
+      !hasOverflow ||
+      pointerId.current !== null ||
+      (e.pointerType === "mouse" && e.button !== 0)
+    ) {
+      return;
+    }
+
+    cancelQueuedMove();
+    pointerId.current = e.pointerId;
     dragStartX.current = e.clientX;
     dragStartT.current = currentT.current;
     wasDragged.current = false;
     setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    if (e.pointerType === "mouse") e.preventDefault();
+  }
+
+  function handlePointerMove(e) {
+    if (pointerId.current !== e.pointerId) return;
+
+    const delta = e.clientX - dragStartX.current;
+    if (Math.abs(delta) > DRAG_THRESHOLD) wasDragged.current = true;
+
+    queueTranslate(Math.max(minT, Math.min(maxT, dragStartT.current + delta)));
+  }
+
+  function finishPointer(e, cancelled = false) {
+    if (pointerId.current !== e.pointerId) return;
+
+    cancelQueuedMove();
+    pointerId.current = null;
+    setDragging(false);
+
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    if (cancelled) {
+      applyTranslate(dragStartT.current, true);
+      return;
+    }
+
+    const finalT = Math.max(
+      minT,
+      Math.min(maxT, dragStartT.current + e.clientX - dragStartX.current)
+    );
+    currentT.current = finalT;
+    snapToClosestSlot();
+  }
+
+  function handleLostPointerCapture(e) {
+    if (pointerId.current !== e.pointerId) return;
+    cancelQueuedMove();
+    pointerId.current = null;
+    setDragging(false);
+    snapToClosestSlot();
   }
 
   function handleThumbClick(i) {
@@ -146,56 +225,64 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     );
   }
 
-  if (total <= visibleCount) {
-    return (
-      <div className="mt-4 flex gap-2 justify-center">
-        {images.map((img, i) => renderThumb(img, i))}
-      </div>
-    );
-  }
-
   const canLeft = selectedIndex > 0;
   const canRight = selectedIndex < total - 1;
+  const measuredWidth = rowW > 0
+    ? Math.min(total, visibleCount) * SLOT - GAP
+    : undefined;
 
   return (
-    <div className="mt-4 flex items-center gap-2 justify-center">
-      <button
-        onClick={() => onSelect(Math.max(selectedIndex - 1, 0))}
-        disabled={!canLeft}
-        className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
-          canLeft ? "text-gray-700 hover:bg-gray-100" : "text-gray-300"
-        }`}
-      >
-        <ChevronLeft />
-      </button>
+    <div ref={rowRef} className="mt-4 flex w-full items-center gap-2 justify-center">
+      {hasOverflow && (
+        <button
+          onClick={() => onSelect(Math.max(selectedIndex - 1, 0))}
+          disabled={!canLeft}
+          aria-label="Previous image"
+          className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
+            canLeft ? "text-gray-700 hover:bg-gray-100" : "text-gray-300"
+          }`}
+        >
+          <ChevronLeft />
+        </button>
+      )}
 
       <div
-        ref={containerRef}
         className="overflow-hidden rounded-lg flex-1"
-        style={{ maxWidth: containerW > 0 ? `${visibleCount * SLOT - GAP}px` : undefined }}
+        style={{ maxWidth: measuredWidth ? `${measuredWidth}px` : undefined }}
       >
         <div
           ref={trackRef}
-          className={`flex gap-2 ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          className={`flex gap-2 ${
+            hasOverflow ? (dragging ? "cursor-grabbing" : "cursor-grab") : ""
+          }`}
           style={{
-            transition: dragging ? "none" : "transform 0.22s ease-out",
+            touchAction: "pan-y pinch-zoom",
             willChange: "transform",
+            WebkitUserDrag: "none",
           }}
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={finishPointer}
+          onPointerCancel={(e) => finishPointer(e, true)}
+          onLostPointerCapture={handleLostPointerCapture}
+          onDragStart={(e) => e.preventDefault()}
         >
           {images.map((img, i) => renderThumb(img, i))}
         </div>
       </div>
 
-      <button
-        onClick={() => onSelect(Math.min(selectedIndex + 1, total - 1))}
-        disabled={!canRight}
-        className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
-          canRight ? "text-gray-700 hover:bg-gray-100" : "text-gray-300"
-        }`}
-      >
-        <ChevronRight />
-      </button>
+      {hasOverflow && (
+        <button
+          onClick={() => onSelect(Math.min(selectedIndex + 1, total - 1))}
+          disabled={!canRight}
+          aria-label="Next image"
+          className={`flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
+            canRight ? "text-gray-700 hover:bg-gray-100" : "text-gray-300"
+          }`}
+        >
+          <ChevronRight />
+        </button>
+      )}
     </div>
   );
 }
