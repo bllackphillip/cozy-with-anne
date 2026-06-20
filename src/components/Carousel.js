@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 
-const DRAG_THRESHOLD = 5;
+const MOUSE_DRAG_THRESHOLD = 5;
+const TOUCH_DRAG_THRESHOLD = 10;
 const FLICK_VELOCITY = 0.35;
 const SNAP_DURATION = 420;
 const SNAP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -73,6 +74,7 @@ export default function Carousel({
   const dragStartX   = useRef(0);
   const dragOriginX  = useRef(0);
   const dragStartAt  = useRef(0);
+  const dragThreshold = useRef(MOUSE_DRAG_THRESHOLD);
   const pendingX     = useRef(null);
   const moveFrame    = useRef(null);
 
@@ -154,25 +156,37 @@ export default function Carousel({
     if (!trackRef.current) return;
 
     cancelQueuedMove();
-    const currentX = renderedTranslateX(trackRef.current);
-    applyTransform(currentX, false);
-
     pointerId.current = e.pointerId;
     dragStartX.current = e.clientX;
-    dragOriginX.current = currentX;
     dragStartAt.current = performance.now();
+    dragThreshold.current = e.pointerType === "touch"
+      ? TOUCH_DRAG_THRESHOLD
+      : MOUSE_DRAG_THRESHOLD;
     wasDragged.current = false;
-    setDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-
-    if (e.pointerType === "mouse") e.preventDefault();
   }
 
   function handlePointerMove(e) {
     if (pointerId.current !== e.pointerId) return;
 
     let delta = e.clientX - dragStartX.current;
-    if (Math.abs(delta) > DRAG_THRESHOLD) wasDragged.current = true;
+    if (!wasDragged.current) {
+      if (Math.abs(delta) < dragThreshold.current) return;
+
+      const currentX = renderedTranslateX(trackRef.current);
+      wasDragged.current = true;
+      setDragging(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+
+      // Start from the track's currently rendered position so grabbing it
+      // during a snap animation does not cause a jump.
+      const resistedDelta =
+        (activeRef.current === 0 && delta > 0) ||
+        (activeRef.current === total - 1 && delta < 0)
+          ? delta * 0.22
+          : delta;
+      dragOriginX.current = currentX - resistedDelta;
+      applyTransform(currentX, false);
+    }
 
     // A little resistance at either end makes the boundary feel physical
     // without allowing the carousel to drift far beyond its content.
@@ -186,6 +200,7 @@ export default function Carousel({
   function finishPointer(e, cancelled = false) {
     if (pointerId.current !== e.pointerId) return;
 
+    const didDrag = wasDragged.current;
     cancelQueuedMove();
     pointerId.current = null;
     setDragging(false);
@@ -194,10 +209,14 @@ export default function Carousel({
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
 
-    if (cancelled) {
+    if (cancelled && didDrag) {
       moveTo(activeRef.current);
       return;
     }
+
+    // A clean press was never captured, so the nested link/button receives its
+    // normal click. Only a confirmed drag enters the snapping path below.
+    if (!didDrag) return;
 
     const { slideW, gap } = computeLayout(containerWRef.current, 0, slideWidthRatio, slideGapRatio, mobileWidthRatio);
     const unit = slideW + gap;

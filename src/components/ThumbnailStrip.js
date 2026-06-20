@@ -8,7 +8,8 @@ const GAP = 8;
 const SLOT = THUMB_W + GAP;
 const ARROW_W = 32;
 const CONTROLS_W = ARROW_W * 2 + GAP * 2;
-const DRAG_THRESHOLD = 5;
+const MOUSE_DRAG_THRESHOLD = 5;
+const TOUCH_DRAG_THRESHOLD = 10;
 const SNAP_DURATION = 220;
 const SNAP_EASING = "ease-out";
 
@@ -32,6 +33,17 @@ function getSrc(img) {
   return typeof img === "string" ? img : img.url;
 }
 
+function renderedTranslateX(element) {
+  const transform = window.getComputedStyle(element).transform;
+  if (!transform || transform === "none") return 0;
+
+  const values = transform
+    .slice(transform.indexOf("(") + 1, transform.lastIndexOf(")"))
+    .split(",")
+    .map(Number);
+  return transform.startsWith("matrix3d") ? values[12] : values[4];
+}
+
 export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
   const [dragging, setDragging] = useState(false);
   const [rowW, setRowW] = useState(0);
@@ -42,6 +54,7 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
   const pointerId = useRef(null);
   const dragStartX = useRef(0);
   const dragStartT = useRef(0);
+  const dragThreshold = useRef(MOUSE_DRAG_THRESHOLD);
   const wasDragged = useRef(false);
   const pendingT = useRef(null);
   const moveFrame = useRef(null);
@@ -146,18 +159,29 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
     pointerId.current = e.pointerId;
     dragStartX.current = e.clientX;
     dragStartT.current = currentT.current;
+    dragThreshold.current = e.pointerType === "touch"
+      ? TOUCH_DRAG_THRESHOLD
+      : MOUSE_DRAG_THRESHOLD;
     wasDragged.current = false;
-    setDragging(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-
-    if (e.pointerType === "mouse") e.preventDefault();
   }
 
   function handlePointerMove(e) {
     if (pointerId.current !== e.pointerId) return;
 
     const delta = e.clientX - dragStartX.current;
-    if (Math.abs(delta) > DRAG_THRESHOLD) wasDragged.current = true;
+    if (!wasDragged.current) {
+      if (Math.abs(delta) < dragThreshold.current) return;
+
+      const currentX = renderedTranslateX(trackRef.current);
+      wasDragged.current = true;
+      setDragging(true);
+      e.currentTarget.setPointerCapture(e.pointerId);
+
+      // If the peek animation is still moving, begin the drag from the
+      // position currently visible on screen rather than its destination.
+      dragStartT.current = currentX - delta;
+      applyTranslate(currentX);
+    }
 
     queueTranslate(Math.max(minT, Math.min(maxT, dragStartT.current + delta)));
   }
@@ -165,6 +189,7 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
   function finishPointer(e, cancelled = false) {
     if (pointerId.current !== e.pointerId) return;
 
+    const didDrag = wasDragged.current;
     cancelQueuedMove();
     pointerId.current = null;
     setDragging(false);
@@ -173,10 +198,14 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
 
-    if (cancelled) {
-      applyTranslate(dragStartT.current, true);
+    if (cancelled && didDrag) {
+      snapToClosestSlot();
       return;
     }
+
+    // Leave clean clicks alone so the thumbnail button can update the focused
+    // image. Pointer capture is only used after a real drag begins.
+    if (!didDrag) return;
 
     const finalT = Math.max(
       minT,
