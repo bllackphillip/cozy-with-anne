@@ -8,7 +8,6 @@ const DESKTOP_LENS_SIZE = 200;
 const TOUCH_LENS_MAX_SIZE = 202;
 const TOUCH_LENS_MIN_SIZE = 158;
 const TAP_MOVE_TOLERANCE = 10;
-const VIEWPORT_GAP = 8;
 
 /*
   MAGNIFYING GLASS COMPONENT
@@ -86,15 +85,15 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
     let lensY = sampleY;
 
     if (isTouch) {
-      // Keep the touch lens centred on the sampled point. It may leave the
-      // artwork frame and is constrained only by the phone viewport.
-      const minLensX = VIEWPORT_GAP - rect.left + lensRadius;
-      const maxLensX = window.innerWidth - VIEWPORT_GAP - rect.left - lensRadius;
-      const minLensY = VIEWPORT_GAP - rect.top + lensRadius;
-      const maxLensY = window.innerHeight - VIEWPORT_GAP - rect.top - lensRadius;
-
-      lensX = Math.max(minLensX, Math.min(maxLensX, sampleX));
-      lensY = Math.max(minLensY, Math.min(maxLensY, sampleY));
+      // Follow the touched point until the lens reaches an artwork edge, then
+      // keep the full circle inside the image while sampling continues beneath
+      // the finger. The small-image fallback keeps the lens centred.
+      lensX = rect.width <= lensSize
+        ? rect.width / 2
+        : Math.max(lensRadius, Math.min(rect.width - lensRadius, sampleX));
+      lensY = rect.height <= lensSize
+        ? rect.height / 2
+        : Math.max(lensRadius, Math.min(rect.height - lensRadius, sampleY));
     }
 
     const scale = Math.max(
@@ -106,8 +105,7 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
     const cropX = (renderedW - rect.width) / 2;
     const cropY = (renderedH - rect.height) / 2;
 
-    // Centre the touched/hovered source point in the lens, even when the touch
-    // lens is visually offset so that the user's finger does not cover it.
+    // Centre the touched/hovered source point in the magnified background.
     const bgX = lensRadius - (sampleX + cropX) * ZOOM_LEVEL;
     const bgY = lensRadius - (sampleY + cropY) * ZOOM_LEVEL;
 
@@ -284,7 +282,7 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
             />
           )}
 
-          {src && showLens && !touchZoomActive && renderLens()}
+          {src && showLens && renderLens()}
         </div>
 
         {src && touchZoomActive && (
@@ -295,8 +293,6 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
             Detail view - drag to wander - tap outside to close
           </div>
         )}
-
-        {src && showLens && touchZoomActive && renderLens()}
       </div>
     </div>
   );
