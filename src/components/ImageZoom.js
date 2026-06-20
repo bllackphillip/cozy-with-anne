@@ -5,10 +5,9 @@ import Image from "next/image";
 
 const ZOOM_LEVEL = 2.5;
 const DESKTOP_LENS_SIZE = 200;
-const TOUCH_LENS_MAX_SIZE = 168;
-const TOUCH_LENS_MIN_SIZE = 132;
+const TOUCH_LENS_MAX_SIZE = 202;
+const TOUCH_LENS_MIN_SIZE = 158;
 const TAP_MOVE_TOLERANCE = 10;
-const TOUCH_LENS_GAP = 24;
 const VIEWPORT_GAP = 8;
 
 /*
@@ -42,7 +41,6 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
   const surfaceRef = useRef(null);
   const imgRef = useRef(null);
   const touchCandidate = useRef(null);
-  const touchLensSide = useRef("above");
   const activePointerId = useRef(null);
   const pendingLensMove = useRef(null);
   const moveFrame = useRef(null);
@@ -79,7 +77,7 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
     const lensSize = isTouch
       ? Math.min(
           TOUCH_LENS_MAX_SIZE,
-          Math.max(TOUCH_LENS_MIN_SIZE, rect.width * 0.44)
+          Math.max(TOUCH_LENS_MIN_SIZE, rect.width * 0.528)
         )
       : DESKTOP_LENS_SIZE;
     const lensRadius = lensSize / 2;
@@ -88,20 +86,15 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
     let lensY = sampleY;
 
     if (isTouch) {
-      // The touch lens may leave the artwork frame. Clamp it only to the
-      // viewport, and keep it on the side chosen when zoom mode activated.
-      // This prevents the lens from repeatedly flipping above and below the
-      // finger while the sampled point moves near an artwork edge.
+      // Keep the touch lens centred on the sampled point. It may leave the
+      // artwork frame and is constrained only by the phone viewport.
       const minLensX = VIEWPORT_GAP - rect.left + lensRadius;
       const maxLensX = window.innerWidth - VIEWPORT_GAP - rect.left - lensRadius;
       const minLensY = VIEWPORT_GAP - rect.top + lensRadius;
       const maxLensY = window.innerHeight - VIEWPORT_GAP - rect.top - lensRadius;
-      const desiredLensY = touchLensSide.current === "above"
-        ? sampleY - lensRadius - TOUCH_LENS_GAP
-        : sampleY + lensRadius + TOUCH_LENS_GAP;
 
       lensX = Math.max(minLensX, Math.min(maxLensX, sampleX));
-      lensY = Math.max(minLensY, Math.min(maxLensY, desiredLensY));
+      lensY = Math.max(minLensY, Math.min(maxLensY, sampleY));
     }
 
     const scale = Math.max(
@@ -137,21 +130,6 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
       pendingLensMove.current = null;
       if (pending) updateLens(pending.clientX, pending.clientY, pending.isTouch);
     });
-  }
-
-  function chooseTouchLensSide(clientY) {
-    const surface = surfaceRef.current;
-    if (!surface) return;
-
-    const rect = surface.getBoundingClientRect();
-    const lensSize = Math.min(
-      TOUCH_LENS_MAX_SIZE,
-      Math.max(TOUCH_LENS_MIN_SIZE, rect.width * 0.44)
-    );
-
-    // Once selected, the side remains stable until detail mode closes.
-    const spaceNeededAbove = lensSize + TOUCH_LENS_GAP + VIEWPORT_GAP;
-    touchLensSide.current = clientY >= spaceNeededAbove ? "above" : "below";
   }
 
   function handlePointerEnter(e) {
@@ -228,7 +206,6 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
 
     if (candidate.moved) return;
 
-    chooseTouchLensSide(e.clientY);
     setTouchZoomActive(true);
     setShowLens(true);
     queueLensUpdate(e.clientX, e.clientY, true);
