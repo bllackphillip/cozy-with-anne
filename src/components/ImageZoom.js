@@ -8,6 +8,8 @@ const DESKTOP_LENS_SIZE = 200;
 const TOUCH_LENS_MAX_SIZE = 168;
 const TOUCH_LENS_MIN_SIZE = 132;
 const TAP_MOVE_TOLERANCE = 10;
+const TOUCH_LENS_GAP = 24;
+const VIEWPORT_GAP = 8;
 
 /*
   MAGNIFYING GLASS COMPONENT
@@ -40,6 +42,7 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
   const surfaceRef = useRef(null);
   const imgRef = useRef(null);
   const touchCandidate = useRef(null);
+  const touchLensSide = useRef("above");
   const activePointerId = useRef(null);
   const pendingLensMove = useRef(null);
   const moveFrame = useRef(null);
@@ -85,22 +88,20 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
     let lensY = sampleY;
 
     if (isTouch) {
-      // Keep the enlarged detail clear of the fingertip. Prefer showing it
-      // above the touched point, but move it below near the image's top edge.
-      // The sampled point remains the exact location under the finger.
-      const edgeGap = 8;
-      const fingerGap = 24;
-      const minX = lensRadius + edgeGap;
-      const maxX = rect.width - lensRadius - edgeGap;
-      const minY = lensRadius + edgeGap;
-      const maxY = rect.height - lensRadius - edgeGap;
-      const aboveFinger = sampleY - lensRadius - fingerGap;
-      const belowFinger = sampleY + lensRadius + fingerGap;
+      // The touch lens may leave the artwork frame. Clamp it only to the
+      // viewport, and keep it on the side chosen when zoom mode activated.
+      // This prevents the lens from repeatedly flipping above and below the
+      // finger while the sampled point moves near an artwork edge.
+      const minLensX = VIEWPORT_GAP - rect.left + lensRadius;
+      const maxLensX = window.innerWidth - VIEWPORT_GAP - rect.left - lensRadius;
+      const minLensY = VIEWPORT_GAP - rect.top + lensRadius;
+      const maxLensY = window.innerHeight - VIEWPORT_GAP - rect.top - lensRadius;
+      const desiredLensY = touchLensSide.current === "above"
+        ? sampleY - lensRadius - TOUCH_LENS_GAP
+        : sampleY + lensRadius + TOUCH_LENS_GAP;
 
-      lensX = Math.max(minX, Math.min(maxX, sampleX));
-      lensY = aboveFinger >= minY
-        ? aboveFinger
-        : Math.min(maxY, belowFinger);
+      lensX = Math.max(minLensX, Math.min(maxLensX, sampleX));
+      lensY = Math.max(minLensY, Math.min(maxLensY, desiredLensY));
     }
 
     const scale = Math.max(
@@ -136,6 +137,21 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
       pendingLensMove.current = null;
       if (pending) updateLens(pending.clientX, pending.clientY, pending.isTouch);
     });
+  }
+
+  function chooseTouchLensSide(clientY) {
+    const surface = surfaceRef.current;
+    if (!surface) return;
+
+    const rect = surface.getBoundingClientRect();
+    const lensSize = Math.min(
+      TOUCH_LENS_MAX_SIZE,
+      Math.max(TOUCH_LENS_MIN_SIZE, rect.width * 0.44)
+    );
+
+    // Once selected, the side remains stable until detail mode closes.
+    const spaceNeededAbove = lensSize + TOUCH_LENS_GAP + VIEWPORT_GAP;
+    touchLensSide.current = clientY >= spaceNeededAbove ? "above" : "below";
   }
 
   function handlePointerEnter(e) {
@@ -212,6 +228,7 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
 
     if (candidate.moved) return;
 
+    chooseTouchLensSide(e.clientY);
     setTouchZoomActive(true);
     setShowLens(true);
     queueLensUpdate(e.clientX, e.clientY, true);
@@ -226,21 +243,40 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
     }
   }
 
+  function renderLens() {
+    return (
+      <div
+        className="absolute z-10 pointer-events-none rounded-full border-2 border-white/70 shadow-lg"
+        aria-hidden="true"
+        style={{
+          width: `${lensStyle.size}px`,
+          height: `${lensStyle.size}px`,
+          transform: "translate(-50%, -50%)",
+          left: lensStyle.x,
+          top: lensStyle.y,
+          backgroundImage: `url(${src})`,
+          backgroundSize: lensStyle.backgroundSize,
+          backgroundPosition: lensStyle.backgroundPosition,
+          backgroundRepeat: "no-repeat",
+        }}
+      />
+    );
+  }
+
   return (
     <div ref={rootRef}>
       <p className="mb-3 text-sm text-[var(--color-accent)]">
-        <span aria-hidden="true">&searr;&nbsp;</span>
         <span className="zoom-hint-fine">
-          Come a little closer &mdash; hover to wander through the brushstrokes.
+          Come a little closer - <span aria-hidden="true">{"\u{1F50D}"}</span> Hover to explore the brushstrokes
         </span>
         <span className="zoom-hint-touch">
-          Come a little closer &mdash; tap the artwork, then drag to explore its details.
+          Come a little closer - <span aria-hidden="true">{"\u{1F50D}"}</span> Tap the artwork, then drag to explore its details
         </span>
       </p>
 
       <div
         ref={surfaceRef}
-        className={`relative overflow-hidden cursor-crosshair bg-gray-100 select-none ${className}`}
+        className={`relative cursor-crosshair select-none ${className}`}
         style={{
           touchAction: touchZoomActive ? "none" : "pan-y pinch-zoom",
           WebkitTouchCallout: touchZoomActive ? "none" : "default",
@@ -255,44 +291,35 @@ function ImageZoomInteraction({ src, alt, className = "" }) {
           if (touchZoomActive) e.preventDefault();
         }}
       >
-        {src && (
-          <Image
-            ref={imgRef}
-            src={src}
-            alt={alt}
-            fill
-            sizes="(max-width: 1024px) 100vw, 50vw"
-            className="object-cover pointer-events-none"
-            draggable={false}
-          />
-        )}
+        <div
+          className="absolute inset-0 overflow-hidden bg-gray-100 pointer-events-none"
+          style={{ borderRadius: "inherit" }}
+        >
+          {src && (
+            <Image
+              ref={imgRef}
+              src={src}
+              alt={alt}
+              fill
+              sizes="(max-width: 1024px) 100vw, 50vw"
+              className="object-cover pointer-events-none"
+              draggable={false}
+            />
+          )}
+
+          {src && showLens && !touchZoomActive && renderLens()}
+        </div>
 
         {src && touchZoomActive && (
           <div
-            className="absolute z-20 top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-black/65 px-3 py-1.5 text-xs text-white shadow-md pointer-events-none"
+            className="absolute z-20 top-3 left-1/2 -translate-x-1/2 max-w-[calc(100%-1.5rem)] rounded-full bg-black/65 px-3 py-1.5 text-center text-xs text-white shadow-md pointer-events-none"
             aria-live="polite"
           >
-            Detail view &middot; drag to wander &middot; tap outside to close
+            Detail view - drag to wander - tap outside to close
           </div>
         )}
 
-        {src && showLens && (
-          <div
-            className="absolute z-10 pointer-events-none rounded-full border-2 border-white/70 shadow-lg"
-            aria-hidden="true"
-            style={{
-              width: `${lensStyle.size}px`,
-              height: `${lensStyle.size}px`,
-              transform: "translate(-50%, -50%)",
-              left: lensStyle.x,
-              top: lensStyle.y,
-              backgroundImage: `url(${src})`,
-              backgroundSize: lensStyle.backgroundSize,
-              backgroundPosition: lensStyle.backgroundPosition,
-              backgroundRepeat: "no-repeat",
-            }}
-          />
-        )}
+        {src && showLens && touchZoomActive && renderLens()}
       </div>
     </div>
   );
