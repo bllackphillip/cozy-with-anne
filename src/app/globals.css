@@ -144,9 +144,11 @@ body:has(#hero-end) .site-header-home-link {
     box-shadow 0.15s;
 }
 
-.site-btn:hover {
-  background-color: var(--color-surface);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+@media (hover: hover) and (pointer: fine) {
+  .site-btn:hover {
+    background-color: var(--color-surface);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.18);
+  }
 }
 
 .site-btn-active {

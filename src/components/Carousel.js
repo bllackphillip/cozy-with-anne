@@ -175,7 +175,13 @@ export default function Carousel({
       const currentX = renderedTranslateX(trackRef.current);
       wasDragged.current = true;
       setDragging(true);
-      e.currentTarget.setPointerCapture(e.pointerId);
+      // Touch/stylus inputs already receive implicit capture on the pressed
+      // child. Keep that capture so the eventual click target remains correct;
+      // the pointer events still bubble through the carousel track. Mouse
+      // needs explicit capture so dragging continues outside the track.
+      if (e.pointerType === "mouse") {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
 
       // Start from the track's currently rendered position so grabbing it
       // during a snap animation does not cause a jump.
@@ -237,7 +243,9 @@ export default function Carousel({
   }
 
   function handleLostPointerCapture(e) {
-    if (pointerId.current !== e.pointerId) return;
+    // lostpointercapture bubbles. Ignore an implicit capture being released
+    // from a child link; only recover when this track itself loses capture.
+    if (e.target !== e.currentTarget || pointerId.current !== e.pointerId) return;
     cancelQueuedMove();
     pointerId.current = null;
     setDragging(false);

@@ -175,7 +175,12 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
       const currentX = renderedTranslateX(trackRef.current);
       wasDragged.current = true;
       setDragging(true);
-      e.currentTarget.setPointerCapture(e.pointerId);
+      // Touch/stylus already has implicit capture on the thumbnail button, and
+      // its pointer events bubble to this track. Only mouse needs explicit
+      // capture to keep dragging after the pointer leaves the strip.
+      if (e.pointerType === "mouse") {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
 
       // If the peek animation is still moving, begin the drag from the
       // position currently visible on screen rather than its destination.
@@ -216,7 +221,8 @@ export default function ThumbnailStrip({ images, selectedIndex, onSelect }) {
   }
 
   function handleLostPointerCapture(e) {
-    if (pointerId.current !== e.pointerId) return;
+    // Ignore bubbled lostpointercapture events from thumbnail buttons.
+    if (e.target !== e.currentTarget || pointerId.current !== e.pointerId) return;
     cancelQueuedMove();
     pointerId.current = null;
     setDragging(false);
