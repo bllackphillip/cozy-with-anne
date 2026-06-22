@@ -3,6 +3,11 @@
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 
 const MOUSE_DRAG_THRESHOLD = 5;
+const MOUSE_MOMENTUM_MIN_VELOCITY = 0.08;
+const MOUSE_MOMENTUM_STOP_VELOCITY = 0.02;
+const MOUSE_MOMENTUM_MAX_VELOCITY = 2.5;
+const MOUSE_MOMENTUM_FRICTION = 0.95;
+const SCROLL_SETTLE_DELAY = 120;
 
 function ChevronLeft() {
   return (
@@ -20,16 +25,25 @@ function ChevronRight() {
   );
 }
 
-function computeLayout(containerW, slideWidthRatio, slideGapRatio, mobileWidthRatio) {
+function computeLayout(
+  containerW,
+  slideWidthRatio,
+  slideGapRatio,
+  mobileWidthRatio,
+  desktopLayoutMaxWidth
+) {
   if (containerW === 0) return { slideW: 0, gap: 0, edgePadding: 0 };
 
   const isMobile = containerW < 768;
+  const layoutW = isMobile || !desktopLayoutMaxWidth
+    ? containerW
+    : Math.min(containerW, desktopLayoutMaxWidth);
   const slideW = isMobile
     ? containerW * mobileWidthRatio
-    : containerW * slideWidthRatio;
+    : layoutW * slideWidthRatio;
   const gap = isMobile
     ? (mobileWidthRatio < 1 ? containerW * slideGapRatio : 0)
-    : containerW * slideGapRatio;
+    : layoutW * slideGapRatio;
 
   return {
     slideW,
@@ -49,6 +63,9 @@ export default function Carousel({
   slideWidthRatio = 0.76,
   slideGapRatio = 0.04,
   mobileWidthRatio = 1.0,
+  desktopLayoutMaxWidth,
+  desktopMouseMomentum = false,
+  desktopStableControls = false,
   className = "",
   innerClassName = "",
 }) {
@@ -64,10 +81,16 @@ export default function Carousel({
   const slideRefs = useRef([]);
   const activeRef = useRef(initial);
   const scrollFrame = useRef(null);
+  const scrollSettleTimer = useRef(null);
+  const programmaticTarget = useRef(null);
+  const momentumFrame = useRef(null);
 
   const mousePointerId = useRef(null);
   const mouseStartX = useRef(0);
   const mouseStartScrollLeft = useRef(0);
+  const mouseLastX = useRef(0);
+  const mouseLastTime = useRef(0);
+  const mouseVelocity = useRef(0);
   const mouseDragged = useRef(false);
   const suppressMouseClick = useRef(false);
   const suppressMouseClickTimer = useRef(null);
@@ -89,6 +112,8 @@ export default function Carousel({
 
   useEffect(() => () => {
     if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    if (momentumFrame.current !== null) cancelAnimationFrame(momentumFrame.current);
+    if (scrollSettleTimer.current !== null) clearTimeout(scrollSettleTimer.current);
     if (suppressMouseClickTimer.current !== null) {
       clearTimeout(suppressMouseClickTimer.current);
     }
@@ -98,8 +123,23 @@ export default function Carousel({
     containerW,
     slideWidthRatio,
     slideGapRatio,
-    mobileWidthRatio
+    mobileWidthRatio,
+    desktopLayoutMaxWidth
   );
+
+  function cancelMomentum() {
+    if (momentumFrame.current !== null) {
+      cancelAnimationFrame(momentumFrame.current);
+      momentumFrame.current = null;
+    }
+  }
+
+  function clearScrollSettleTimer() {
+    if (scrollSettleTimer.current !== null) {
+      clearTimeout(scrollSettleTimer.current);
+      scrollSettleTimer.current = null;
+    }
+  }
 
   function scrollToIndex(index, behavior = "smooth") {
     const viewport = viewportRef.current;
@@ -108,6 +148,15 @@ export default function Carousel({
 
     const left = slide.offsetLeft - (viewport.clientWidth - slide.offsetWidth) / 2;
     viewport.scrollTo({ left, behavior });
+  }
+
+  function usesDesktopControlLock() {
+    const viewport = viewportRef.current;
+    return Boolean(
+      desktopStableControls &&
+      viewport &&
+      viewport.clientWidth >= 768
+    );
   }
 
   useLayoutEffect(() => {
@@ -144,11 +193,44 @@ export default function Carousel({
   }
 
   function handleScroll() {
-    if (scrollFrame.current !== null) return;
-    scrollFrame.current = requestAnimationFrame(() => {
-      scrollFrame.current = null;
-      updateActiveFromScroll();
-    });
+    if (!usesDesktopControlLock()) {
+      if (scrollFrame.current !== null) return;
+      scrollFrame.current = requestAnimationFrame(() => {
+        scrollFrame.current = null;
+        updateActiveFromScroll();
+      });
+      return;
+    }
+
+    if (programmaticTarget.current === null && scrollFrame.current === null) {
+      scrollFrame.current = requestAnimationFrame(() => {
+        scrollFrame.current = null;
+        updateActiveFromScroll();
+      });
+    }
+
+    clearScrollSettleTimer();
+    scrollSettleTimer.current = window.setTimeout(
+      handleScrollEnd,
+      SCROLL_SETTLE_DELAY
+    );
+  }
+
+  function handleScrollEnd() {
+    if (!usesDesktopControlLock() && momentumFrame.current === null) return;
+
+    clearScrollSettleTimer();
+
+    const target = programmaticTarget.current;
+    programmaticTarget.current = null;
+
+    if (target !== null) {
+      activeRef.current = target;
+      setActive(target);
+      return;
+    }
+
+    updateActiveFromScroll();
   }
 
   function clearMouseClickSuppression() {
@@ -175,10 +257,22 @@ export default function Carousel({
       return;
     }
 
+    cancelMomentum();
+    clearScrollSettleTimer();
+    programmaticTarget.current = null;
     clearMouseClickSuppression();
+
+    const viewport = viewportRef.current;
+    if (viewport) {
+      viewport.scrollTo({ left: viewport.scrollLeft, behavior: "auto" });
+    }
+
     mousePointerId.current = e.pointerId;
     mouseStartX.current = e.clientX;
-    mouseStartScrollLeft.current = viewportRef.current?.scrollLeft ?? 0;
+    mouseStartScrollLeft.current = viewport?.scrollLeft ?? 0;
+    mouseLastX.current = e.clientX;
+    mouseLastTime.current = e.timeStamp;
+    mouseVelocity.current = 0;
     mouseDragged.current = false;
   }
 
@@ -186,6 +280,11 @@ export default function Carousel({
     if (e.pointerType !== "mouse" || mousePointerId.current !== e.pointerId) return;
 
     const delta = e.clientX - mouseStartX.current;
+    const elapsed = e.timeStamp - mouseLastTime.current;
+    const moved = e.clientX - mouseLastX.current;
+    mouseLastX.current = e.clientX;
+    mouseLastTime.current = e.timeStamp;
+
     if (!mouseDragged.current) {
       if (Math.abs(delta) < MOUSE_DRAG_THRESHOLD) return;
       mouseDragged.current = true;
@@ -195,6 +294,64 @@ export default function Carousel({
 
     e.preventDefault();
     e.currentTarget.scrollLeft = mouseStartScrollLeft.current - delta;
+
+    if (elapsed > 0) {
+      const instantaneousVelocity = -moved / elapsed;
+      mouseVelocity.current =
+        mouseVelocity.current * 0.65 + instantaneousVelocity * 0.35;
+    }
+  }
+
+  function startMouseMomentum(initialVelocity) {
+    const viewport = viewportRef.current;
+    if (
+      !desktopMouseMomentum ||
+      !viewport ||
+      viewport.clientWidth < 768 ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    let velocity = Math.max(
+      -MOUSE_MOMENTUM_MAX_VELOCITY,
+      Math.min(MOUSE_MOMENTUM_MAX_VELOCITY, initialVelocity)
+    );
+    if (Math.abs(velocity) < MOUSE_MOMENTUM_MIN_VELOCITY) return;
+
+    let previousTime = performance.now();
+
+    function step(currentTime) {
+      const elapsed = Math.min(32, currentTime - previousTime);
+      previousTime = currentTime;
+
+      const maxScrollLeft = viewport.scrollWidth - viewport.clientWidth;
+      const nextScrollLeft = Math.max(
+        0,
+        Math.min(maxScrollLeft, viewport.scrollLeft + velocity * elapsed)
+      );
+      const reachedBoundary =
+        nextScrollLeft === 0 || nextScrollLeft === maxScrollLeft;
+
+      viewport.scrollLeft = nextScrollLeft;
+      velocity *= Math.pow(
+        MOUSE_MOMENTUM_FRICTION,
+        elapsed / (1000 / 60)
+      );
+
+      if (
+        reachedBoundary ||
+        Math.abs(velocity) < MOUSE_MOMENTUM_STOP_VELOCITY
+      ) {
+        momentumFrame.current = null;
+        handleScrollEnd();
+        return;
+      }
+
+      momentumFrame.current = requestAnimationFrame(step);
+    }
+
+    momentumFrame.current = requestAnimationFrame(step);
   }
 
   function finishMousePointer(e) {
@@ -209,7 +366,15 @@ export default function Carousel({
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
 
-    if (didDrag) suppressImmediateMouseClick();
+    if (didDrag) {
+      suppressImmediateMouseClick();
+
+      const timeSinceLastMove = e.timeStamp - mouseLastTime.current;
+      const releaseVelocity = timeSinceLastMove < 80
+        ? mouseVelocity.current
+        : 0;
+      startMouseMomentum(releaseVelocity);
+    }
   }
 
   function handleClickCapture(e) {
@@ -221,9 +386,26 @@ export default function Carousel({
 
   function moveTo(index) {
     const target = clampIndex(index, total);
+    cancelMomentum();
     activeRef.current = target;
     setActive(target);
-    scrollToIndex(target);
+
+    if (!usesDesktopControlLock()) {
+      scrollToIndex(target);
+      return;
+    }
+
+    clearScrollSettleTimer();
+    programmaticTarget.current = target;
+
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    scrollToIndex(target, reducedMotion ? "auto" : "smooth");
+
+    if (reducedMotion) {
+      programmaticTarget.current = null;
+    }
   }
 
   return (
@@ -243,6 +425,7 @@ export default function Carousel({
           onPointerMove={handlePointerMove}
           onPointerUp={finishMousePointer}
           onPointerCancel={finishMousePointer}
+          onScrollEnd={handleScrollEnd}
           onClickCapture={handleClickCapture}
           onDragStart={(e) => e.preventDefault()}
         >

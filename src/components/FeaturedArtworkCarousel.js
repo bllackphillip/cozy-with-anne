@@ -10,7 +10,9 @@ export default function FeaturedArtworkCarousel({ artworks }) {
       initialIndex={Math.floor(artworks.length / 2)}
       slideWidthRatio={0.34}
       mobileWidthRatio={0.82}
-      innerClassName="max-w-6xl mx-auto"
+      desktopLayoutMaxWidth={1152}
+      desktopMouseMomentum
+      desktopStableControls
       renderSlide={(artwork) => (
         <ArtworkCard
           artwork={artwork}
